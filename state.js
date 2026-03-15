@@ -15,8 +15,9 @@
     return memoryFallback;
   }
   function writeRaw(value){
-    try{ if(storageAvailable()) { localStorage.setItem(STORAGE_KEY, value); return; } }catch(e){}
+    try{ if(storageAvailable()) { localStorage.setItem(STORAGE_KEY, value); } }catch(e){}
     memoryFallback = value;
+    try{ window.SchedulerCloud?.queuePush?.(STORAGE_KEY, value); }catch(e){}
   }
   function deepClone(x){ return JSON.parse(JSON.stringify(x)); }
 
@@ -146,12 +147,19 @@
   function loadState(){
     try{
       const raw = readRaw();
-      if(!raw){
+      let parsed = null;
+      if(raw){
+        parsed = JSON.parse(raw);
+      } else {
+        const boot = window.SchedulerCloud?.getBootState?.();
+        if(boot && typeof boot === 'object'){
+          parsed = deepClone(boot);
+        }
+      }
+      if(!parsed){
         const init = defaultState();
-        saveState(init);
         return init;
       }
-      const parsed = JSON.parse(raw);
       const base = defaultState();
       const merged = {
         ...base,
@@ -177,6 +185,16 @@
       return merged;
     }catch(err){
       console.error('loadState failed', err);
+      const boot = window.SchedulerCloud?.getBootState?.();
+      if(boot && typeof boot === 'object'){
+        try{
+          const cloned = deepClone(boot);
+          saveState(cloned);
+          return cloned;
+        }catch(innerErr){
+          console.error('loadState boot fallback failed', innerErr);
+        }
+      }
       const init = defaultState();
       saveState(init);
       return init;

@@ -262,6 +262,8 @@ thead .service-Weekend{background:var(--svc-weekend)!important}
   .top-inputs{display:grid;grid-template-columns:1fr 1fr;align-items:end}
 }
 </style>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="./supabase.js"></script>
 </head>
 <body data-page="locum">
 <script>window.PAGE_TYPE='locum';</script>
@@ -282,8 +284,9 @@ thead .service-Weekend{background:var(--svc-weekend)!important}
     return memoryFallback;
   }
   function writeRaw(value){
-    try{ if(storageAvailable()) { localStorage.setItem(STORAGE_KEY, value); return; } }catch(e){}
+    try{ if(storageAvailable()) { localStorage.setItem(STORAGE_KEY, value); } }catch(e){}
     memoryFallback = value;
+    try{ window.SchedulerCloud?.queuePush?.(STORAGE_KEY, value); }catch(e){}
   }
   function deepClone(x){ return JSON.parse(JSON.stringify(x)); }
 
@@ -409,12 +412,19 @@ thead .service-Weekend{background:var(--svc-weekend)!important}
 function loadState(){
     try{
       const raw = readRaw();
-      if(!raw){
+      let parsed = null;
+      if(raw){
+        parsed = JSON.parse(raw);
+      } else {
+        const boot = window.SchedulerCloud?.getBootState?.();
+        if(boot && typeof boot === 'object'){
+          parsed = deepClone(boot);
+        }
+      }
+      if(!parsed){
         const init = defaultState();
-        saveState(init);
         return init;
       }
-      const parsed = JSON.parse(raw);
       const base = defaultState();
       const merged = {
         ...base,
@@ -440,6 +450,16 @@ function loadState(){
       return merged;
     }catch(err){
       console.error('loadState failed', err);
+      const boot = window.SchedulerCloud?.getBootState?.();
+      if(boot && typeof boot === 'object'){
+        try{
+          const cloned = deepClone(boot);
+          saveState(cloned);
+          return cloned;
+        }catch(innerErr){
+          console.error('loadState boot fallback failed', innerErr);
+        }
+      }
       const init = defaultState();
       saveState(init);
       return init;
@@ -2099,14 +2119,22 @@ function chipForOwner(state, ownerId, kind=''){
     document.body.innerHTML = `<div class="mobile-shell"><div class="brand">Department Scheduling</div><p class="subtitle">Read only mobile snapshot</p><div class="card-grid-2"><div class="card"><div class="section-title"><h2>Upcoming Weekends</h2></div><div class="list">${(publishedWeeks||[]).slice(0,6).map(w => `<div class="list-item"><strong>${safe(w.weekendStart)}</strong><div>${chipForOwner(state,w.weekendOwner,'weekend')}</div></div>`).join('') || '<div class="list-item">No schedule loaded.</div>'}</div></div><div class="card"><div class="section-title"><h2>Upcoming Night Calls</h2></div><div class="list">${(publishedNights||[]).filter(n=>!n.weekend).slice(0,10).map(n => `<div class="list-item"><strong>${safe(n.date)}</strong><div>${chipForOwner(state,n.owner)}</div></div>`).join('') || '<div class="list-item">No nights loaded.</div>'}</div></div></div><div class="card" style="margin-top:14px"><div class="section-title"><h2>Master Schedule Snapshot</h2></div>${renderMasterSchedule({ ...state, draftWeeks: publishedWeeks })}</div></div>`;
   }
 
-  document.addEventListener('DOMContentLoaded', () => {
+  document.addEventListener('DOMContentLoaded', async () => {
     try{
+      let hydrated = false;
+      for(let attempt = 0; attempt < 3 && !hydrated; attempt += 1){
+        hydrated = !!(await window.SchedulerCloud?.hydrateLocalState?.('schedulerRebuildStateV13'));
+        if(!hydrated && attempt < 2){
+          await new Promise(resolve => setTimeout(resolve, 300));
+        }
+      }
       if(PAGE==='index') renderIndex();
       else if(PAGE==='admin') renderAdmin();
       else if(PAGE==='physician') renderPhysician();
       else if(PAGE==='locum') renderLocum();
       else if(PAGE==='mobile') renderMobile();
       else renderIndex();
+      window.SchedulerCloud?.startPolling?.('schedulerRebuildStateV13', () => location.reload());
     }catch(err){
       console.error(err);
       document.body.innerHTML = `<div class="home-shell"><div class="brand">Department Scheduling</div><p class="subtitle">The page failed to render.</p><pre class="card">${safe(err.stack || String(err))}</pre></div>`;

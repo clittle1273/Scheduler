@@ -277,28 +277,6 @@ thead .service-header{color:#fff!important}
 .fit-master thead th.service-Weekend{color:#fff!important}
 .night-month-nav{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px}
 .night-month-nav .month-label{font-weight:700}
-
-
-/* Physician portal GitHub-safe layout fixes */
-.fit-master{overflow:auto}
-.fit-master table{width:100%;min-width:1200px;border-collapse:separate;border-spacing:0;table-layout:auto}
-.fit-master th,.fit-master td{white-space:nowrap}
-.fit-master td.service-cell{min-width:120px}
-.fit-master td.mine,.fit-master .mine .assign-chip,.fit-master .assign-chip.mine{box-shadow:inset 0 0 0 2px #eab308;background:#fffdf6}
-.fit-master .week-row-label{min-width:120px}
-.physician-request-top{align-items:end}
-.inline-date-fields{display:grid;grid-template-columns:repeat(2,minmax(160px,1fr));gap:12px}
-.detail-chip{display:inline-flex;align-items:center;justify-content:center;min-height:42px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#fff;font-weight:600;color:var(--text)}
-.single-month .month-card{max-width:100%}
-.single-month .month-grid{grid-template-columns:repeat(7,minmax(0,1fr))}
-.single-month .day-cell{min-height:84px}
-.day-cell.mine{background:#fffdf6;border-color:#ead48a;outline:2px solid #ead48a;outline-offset:-2px}
-@media (max-width: 900px){
-  .fit-master table{min-width:980px}
-  .inline-date-fields{grid-template-columns:1fr}
-  .physician-request-top{grid-template-columns:1fr}
-}
-
 </style>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="./supabase.js"></script>
@@ -439,12 +417,19 @@ thead .service-header{color:#fff!important}
   function loadState(){
     try{
       const raw = readRaw();
-      if(!raw){
+      let parsed = null;
+      if(raw){
+        parsed = JSON.parse(raw);
+      } else {
+        const boot = window.SchedulerCloud?.getBootState?.();
+        if(boot && typeof boot === 'object'){
+          parsed = deepClone(boot);
+        }
+      }
+      if(!parsed){
         const init = defaultState();
-        saveState(init);
         return init;
       }
-      const parsed = JSON.parse(raw);
       const base = defaultState();
       const merged = {
         ...base,
@@ -466,11 +451,20 @@ thead .service-header{color:#fff!important}
         generatedSummary: { ...base.generatedSummary, ...(parsed.generatedSummary || {}) }
       };
       applyOneTimeFreshReset(merged);
-      applyOneTimeFreshReset(merged);
       saveState(merged);
       return merged;
     }catch(err){
       console.error('loadState failed', err);
+      const boot = window.SchedulerCloud?.getBootState?.();
+      if(boot && typeof boot === 'object'){
+        try{
+          const cloned = deepClone(boot);
+          saveState(cloned);
+          return cloned;
+        }catch(innerErr){
+          console.error('loadState boot fallback failed', innerErr);
+        }
+      }
       const init = defaultState();
       saveState(init);
       return init;
@@ -2639,7 +2633,13 @@ function renderPhysicianSchedule(state,pid){
 
   document.addEventListener('DOMContentLoaded', async () => {
     try{
-      await window.SchedulerCloud?.hydrateLocalState?.('schedulerRebuildStateV13');
+      let hydrated = false;
+      for(let attempt = 0; attempt < 3 && !hydrated; attempt += 1){
+        hydrated = !!(await window.SchedulerCloud?.hydrateLocalState?.('schedulerRebuildStateV13'));
+        if(!hydrated && attempt < 2){
+          await new Promise(resolve => setTimeout(resolve, 300));
+        }
+      }
       if(PAGE==='index') renderIndex();
       else if(PAGE==='admin') renderAdmin();
       else if(PAGE==='physician') renderPhysician();

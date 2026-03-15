@@ -2,7 +2,7 @@ Department Scheduling Mini App - Test Build
 
 Open admin.html first.
 
-This build uses shared localStorage so the pages talk to each other:
+This build uses Supabase cloud sync for the shared scheduler state. All portals should sync through the scheduler_state table:
 - admin.html
 - physician.html
 - locum.html
@@ -26,3 +26,25 @@ Files:
 - state.js
 - ui.js
 - styles.css
+
+
+
+CLOUD SYNC SETUP
+1. Open supabase.js
+2. Paste your Supabase Project URL and anon key into the two placeholders
+3. In Supabase, create table scheduler_state with these columns:
+   - id (text, primary key, default 'global')
+   - state (jsonb)
+   - updated_at (timestamptz, default now())
+4. Insert one row:
+   - id = global
+   - state = {}
+5. Re-upload the updated files to GitHub Pages
+
+Notes
+- This build keeps the existing scheduler logic and changes only storage.
+- Pages are self contained, so the HTML files were updated directly.
+- The app saves locally first and syncs to Supabase in the background.
+- All five HTML portals are configured to hydrate from Supabase on load and poll every 15 seconds.
+- Upload only the files inside the Version_1.0_supabase_configured folder. Do not upload the __MACOSX folder.
+- Admin auth is not yet turned on in this package.
