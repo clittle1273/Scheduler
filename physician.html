@@ -4,7 +4,34 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Physician Portal</title>
-  <style>:root{
+  <style>
+
+/* Exact fix: fairness header service cells only */
+.fairness-tight th.service-ICU,
+.fairness-tight th.service-GIM,
+.fairness-tight th.service-CAR1,
+.fairness-tight th.service-CAR2,
+.fairness-tight th.service-OP1,
+.fairness-tight th.service-OP2,
+.fairness-tight th.service-OP3,
+.fairness-tight th.service-Resp,
+.fairness-tight th.service-Nephro,
+.fairness-tight th.service-Echo,
+.fairness-tight th.service-Weekend{
+  color:#ffffff !important;
+}
+
+
+
+
+
+
+
+
+
+
+
+:root{
   --bg:#f4f6f8;
   --panel:#ffffff;
   --soft:#eef2f5;
@@ -26,7 +53,7 @@ a{color:var(--accent-2);text-decoration:none}
 button,input,select,textarea{font:inherit}
 button{cursor:pointer}
 .hidden{display:none!important}
-.page-shell{display:grid;grid-template-columns:240px minmax(0,1fr);min-height:100vh;gap:16px;padding:16px}
+.page-shell{display:grid;grid-template-columns:240px minmax(0,1fr) 330px;min-height:100vh;gap:16px;padding:16px}
 .sidebar,.main-panel,.inspector,.home-shell,.mobile-shell{background:var(--panel);border:1px solid var(--line);box-shadow:var(--shadow);border-radius:18px}
 .sidebar{padding:16px;position:sticky;top:16px;height:calc(100vh - 32px);overflow:auto}
 .brand{font-size:21px;font-weight:700;margin-bottom:6px}
@@ -162,8 +189,7 @@ tr:last-child td{border-bottom:none}
 .coverage-row{align-items:flex-start}
 
 
-.lock-toggle{cursor:pointer;font-size:16px;user-select:none}
-.top-inputs .mode-note{font-size:12px;color:var(--muted)}
+.my-week-row td:first-child{box-shadow:inset 3px 0 0 var(--accent-2)}
 
 
 
@@ -234,103 +260,51 @@ thead .service-Weekend{background:var(--svc-weekend)!important}
   .summary-grid{grid-template-columns:repeat(2,minmax(140px,1fr))}
   .top-inputs{display:grid;grid-template-columns:1fr 1fr;align-items:end}
 }
+
+
+.service-header{color:#fff!important}
+thead .service-header{color:#fff!important}
+.fit-master thead th.service-ICU,
+.fit-master thead th.service-GIM,
+.fit-master thead th.service-CAR1,
+.fit-master thead th.service-CAR2,
+.fit-master thead th.service-Resp,
+.fit-master thead th.service-Nephro,
+.fit-master thead th.service-OP1,
+.fit-master thead th.service-OP2,
+.fit-master thead th.service-OP3,
+.fit-master thead th.service-Echo,
+.fit-master thead th.service-Weekend{color:#fff!important}
+.night-month-nav{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px}
+.night-month-nav .month-label{font-weight:700}
+
+
+/* Physician portal GitHub-safe layout fixes */
+.fit-master{overflow:auto}
+.fit-master table{width:100%;min-width:1200px;border-collapse:separate;border-spacing:0;table-layout:auto}
+.fit-master th,.fit-master td{white-space:nowrap}
+.fit-master td.service-cell{min-width:120px}
+.fit-master td.mine,.fit-master .mine .assign-chip,.fit-master .assign-chip.mine{box-shadow:inset 0 0 0 2px #eab308;background:#fffdf6}
+.fit-master .week-row-label{min-width:120px}
+.physician-request-top{align-items:end}
+.inline-date-fields{display:grid;grid-template-columns:repeat(2,minmax(160px,1fr));gap:12px}
+.detail-chip{display:inline-flex;align-items:center;justify-content:center;min-height:42px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#fff;font-weight:600;color:var(--text)}
+.single-month .month-card{max-width:100%}
+.single-month .month-grid{grid-template-columns:repeat(7,minmax(0,1fr))}
+.single-month .day-cell{min-height:84px}
+.day-cell.mine{background:#fffdf6;border-color:#ead48a;outline:2px solid #ead48a;outline-offset:-2px}
+@media (max-width: 900px){
+  .fit-master table{min-width:980px}
+  .inline-date-fields{grid-template-columns:1fr}
+  .physician-request-top{grid-template-columns:1fr}
+}
+
 </style>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="./supabase.js"></script>
 </head>
-<body data-page="admin">
-<script>window.PAGE_TYPE='physician';
-function tableToCSV(table){
-  const rows=[...table.querySelectorAll("tr")];
-  return rows.map(r=>[...r.children].map(c=>'"'+c.innerText.replace(/"/g,'""')+'"').join(",")).join("\n");
-}
-
-function downloadCSV(csv,name){
-  const blob=new Blob([csv],{type:"text/csv"});
-  const url=URL.createObjectURL(blob);
-  const a=document.createElement("a");
-  a.href=url;a.download=name;a.click();
-  URL.revokeObjectURL(url);
-}
-
-function exportMasterExcel(){
-  const table=document.querySelector(".fit-master table");
-  if(!table) return alert("No master schedule found");
-  downloadCSV(tableToCSV(table),"master_schedule.csv");
-}
-
-function exportNightExcel(){
-  const state = window.AppState && window.AppState.loadState ? window.AppState.loadState() : null;
-  const nights = (state && state.draftNightManual) ? state.draftNightManual : [];
-  if(!nights.length) return alert("No night call calendar found");
-  const people = Object.fromEntries([...(state?.physicians || []), ...(state?.locums || [])].map(p => [p.id, p.name || p.id]));
-  const rows = [["Date","Owner","Type"]].concat(
-    nights.map(n => [
-      n.date || "",
-      people[n.owner] || n.owner || "",
-      n.weekend ? "Weekend call" : "Weekday night call"
-    ])
-  );
-  const csv = rows.map(r => r.map(v => '"' + String(v).replace(/"/g,'""') + '"').join(",")).join("\n");
-  downloadCSV(csv, "night_call.csv");
-}
-
-function exportMasterPDF(){
-  const wrap = document.querySelector('.fit-master');
-  const table = wrap ? wrap.querySelector('table') : null;
-  if(!table){
-    alert("Master schedule not found");
-    return;
-  }
-  const state = window.AppState && window.AppState.loadState ? window.AppState.loadState() : null;
-  const range = state?.settings?.scheduleStart && state?.settings?.scheduleEnd ? `${state.settings.scheduleStart} to ${state.settings.scheduleEnd}` : '';
-  const generated = new Date().toLocaleDateString();
-  const html = table.outerHTML;
-  const win = window.open('', '_blank');
-  win.document.write(`
-    <html>
-      <head>
-        <title>Department Schedule PDF</title>
-        <style>
-          @page { size: landscape; margin: 10mm; }
-          body { font-family: Arial, Helvetica, sans-serif; margin: 0; color: #111; }
-          .print-header{padding:0 0 12px 0;margin-bottom:12px;border-bottom:2px solid #d9e0e6}
-          .print-header h1{margin:0 0 4px 0;font-size:22px}
-          .print-header .sub{font-size:12px;color:#555}
-          .print-wrap { width: 100%; }
-          table { width: 100%; border-collapse: collapse; table-layout: fixed; }
-          th, td { border: 1px solid #d6d6d6; padding: 6px 4px; font-size: 11px; text-align: center; vertical-align: top; }
-          th.service-col, td.week-row-label { width: 110px; text-align: left; }
-          .small { font-size: 10px; color: #666; }
-          .service-header { font-weight: 700; color:#fff; }
-          .assign-chip { display:inline-block; padding:2px 6px; border-radius:999px; font-size:10px; line-height:1.2; white-space:nowrap; border:1px solid #d9d9d9; background:#f7f7f7; color:#111; }
-          .assign-chip.weekend{background:#eef1f4}
-          .assign-chip.locum{background:#f5f3ff}
-          .service-ICU{background:#8f2020!important;color:#fff}
-          .service-GIM{background:#163f73!important;color:#fff}
-          .service-CAR1{background:#1f7a45!important;color:#fff}
-          .service-CAR2{background:#1c6b74!important;color:#fff}
-          .service-Resp{background:#6d3da8!important;color:#fff}
-          .service-Nephro{background:#7a4b1f!important;color:#fff}
-          .service-OP1,.service-OP2,.service-OP3{background:#2f6fad!important;color:#fff}
-          .service-Echo{background:#c76b17!important;color:#fff}
-          .service-Weekend{background:#5b6472!important;color:#fff}
-          .lock-toggle,.btn,button,.pin-toggle{display:none!important}
-        </style>
-      </head>
-      <body>
-        <div class="print-header">
-          <h1>Penticton GIM Schedule</h1>
-          <div class="sub">${range ? `Schedule Range: ${range} · ` : ''}Generated ${generated}</div>
-        </div>
-        <div class="print-wrap">${html}</div>
-      </body>
-    </html>
-  `);
-  win.document.close();
-  win.focus();
-  win.print();
-}
-
-</script>
+<body data-page="physician">
+<script>window.PAGE_TYPE='physician';</script>
 <script>(function(){
   const STORAGE_KEY = 'schedulerRebuildStateV13';
   let memoryFallback = null;
@@ -348,8 +322,9 @@ function exportMasterPDF(){
     return memoryFallback;
   }
   function writeRaw(value){
-    try{ if(storageAvailable()) { localStorage.setItem(STORAGE_KEY, value); return; } }catch(e){}
+    try{ if(storageAvailable()) { localStorage.setItem(STORAGE_KEY, value); } }catch(e){}
     memoryFallback = value;
+    try{ window.SchedulerCloud?.queuePush?.(STORAGE_KEY, value); }catch(e){}
   }
   function deepClone(x){ return JSON.parse(JSON.stringify(x)); }
 
@@ -367,7 +342,7 @@ function exportMasterPDF(){
     { id:'JL', name:'JL', type:'physician', services:['ICU','GIM','CAR1','Weekend','Night','OP'], echoEligible:false, weekendEligible:true, nightEligible:true, opEligible:true,
       fairnessWeights:{ weeklyServices:1, icu:1, weekends:1, weekdayCall:1 } },
     { id:'BB', name:'BB', type:'physician', services:['ICU','Resp','Weekend','Night'], echoEligible:false, weekendEligible:true, nightEligible:true, opEligible:false,
-      fairnessWeights:{ weeklyServices:1, icu:0.8, weekends:0.8, weekdayCall:0.8 } },
+      fairnessWeights:{ weeklyServices:1, icu:0.8, weekends:1, weekdayCall:0.8 } },
     { id:'BF', name:'BF', type:'physician', services:['Nephro','Weekend','Night'], echoEligible:false, weekendEligible:true, nightEligible:true, opEligible:false,
       fairnessWeights:{ weeklyServices:1, icu:1, weekends:1, weekdayCall:1 } },
     { id:'SM', name:'SM', type:'physician', services:['Nephro'], echoEligible:false, weekendEligible:false, nightEligible:false, opEligible:false,
@@ -457,22 +432,8 @@ function exportMasterPDF(){
     return state;
   }
 
-
-  function rangesOverlap(startA, endA, startB, endB){
-    if(!startA || !endA || !startB || !endB) return false;
-    return !(endA < startB || startA > endB);
-  }
-
-  function getPublishedConflict(state, start, end){
-    return (state.publishedArchives || []).find(a => rangesOverlap(start, end, a.start, a.end)) || null;
-  }
-
-  function getPublishedExactRange(state, start, end){
-    return (state.publishedArchives || []).find(a => a.start === start && a.end === end) || null;
-  }
-
   function publishRangeExists(state, start, end){
-    return !!getPublishedConflict(state, start, end);
+    return (state.publishHistory || []).some(entry => entry.start === start && entry.end === end);
   }
 
   function loadState(){
@@ -585,9 +546,9 @@ function exportMasterPDF(){
     resetState,
     publishDraft,
     publishRangeExists,
-    getPublishedConflict,
-    getPublishedExactRange,
     removePublishedScheduleById,
+    removePublishedScheduleById,
+    publishRangeExists,
     upsertRequest,
     removeRequest,
     saveLocum,
@@ -595,96 +556,10 @@ function exportMasterPDF(){
     clearOverrides
   };
 })();
-
-function tableToCSV(table){
-  const rows=[...table.querySelectorAll("tr")];
-  return rows.map(r=>[...r.children].map(c=>'"'+c.innerText.replace(/"/g,'""')+'"').join(",")).join("\n");
-}
-
-function downloadCSV(csv,name){
-  const blob=new Blob([csv],{type:"text/csv"});
-  const url=URL.createObjectURL(blob);
-  const a=document.createElement("a");
-  a.href=url;a.download=name;a.click();
-  URL.revokeObjectURL(url);
-}
-
-function exportMasterExcel(){
-  const table=document.querySelector(".fit-master table");
-  if(!table) return alert("No master schedule found");
-  downloadCSV(tableToCSV(table),"master_schedule.csv");
-}
-
-function exportNightExcel(){
-  const state = window.AppState && window.AppState.loadState ? window.AppState.loadState() : null;
-  const nights = (state && state.draftNightManual) ? state.draftNightManual : [];
-  if(!nights.length) return alert("No night call calendar found");
-  const people = Object.fromEntries([...(state?.physicians || []), ...(state?.locums || [])].map(p => [p.id, p.name || p.id]));
-  const rows = [["Date","Owner","Type"]].concat(
-    nights.map(n => [
-      n.date || "",
-      people[n.owner] || n.owner || "",
-      n.weekend ? "Weekend call" : "Weekday night call"
-    ])
-  );
-  const csv = rows.map(r => r.map(v => '"' + String(v).replace(/"/g,'""') + '"').join(",")).join("\n");
-  downloadCSV(csv, "night_call.csv");
-}
-
-function exportMasterPDF(){
-  const wrap = document.querySelector('.fit-master');
-  const table = wrap ? wrap.querySelector('table') : null;
-  if(!table){
-    alert("Master schedule not found");
-    return;
-  }
-
-  const html = table.outerHTML;
-  const win = window.open('', '_blank');
-  win.document.write(`
-    <html>
-      <head>
-        <title>Master Schedule</title>
-        <style>
-          @page { size: landscape; margin: 10mm; }
-          body { font-family: Arial, Helvetica, sans-serif; margin: 0; color: #111; }
-          .print-wrap { width: 100%; }
-          table { width: 100%; border-collapse: collapse; table-layout: fixed; }
-          th, td { border: 1px solid #d6d6d6; padding: 6px 4px; font-size: 11px; text-align: center; vertical-align: top; }
-          th.service-col, td.week-row-label { width: 110px; text-align: left; }
-          .small { font-size: 10px; color: #666; }
-          .service-header { font-weight: 700; }
-          .chip, .day-owner {
-            display: inline-block;
-            padding: 2px 6px;
-            border-radius: 999px;
-            font-size: 10px;
-            line-height: 1.2;
-            white-space: nowrap;
-            border: 1px solid #d9d9d9;
-            background: #f7f7f7;
-            color: #111;
-          }
-          .service-cell.mine, .my-week-row td { background: #fafafa; }
-          .service-ICU, .service-GIM, .service-CAR1, .service-CAR2, .service-Resp, .service-Nephro,
-          .service-OP1, .service-OP2, .service-OP3, .service-Echo, .service-Weekend { background: transparent; }
-          .lock-toggle, .btn, button { display: none !important; }
-        </style>
-      </head>
-      <body>
-        <div class="print-wrap">${html}</div>
-      </body>
-    </html>
-  `);
-  win.document.close();
-  win.focus();
-  win.print();
-}
-
 </script>
 <script>(function(){
   const MAJOR_SERVICES = ['ICU','GIM','CAR1','CAR2','Resp','Nephro','OP1','OP2','OP3'];
-  const REQUIRED_SERVICES = ['ICU','Resp','Nephro','GIM','CAR1','CAR2'];
+  const REQUIRED_SERVICES = ['Resp','Nephro','ICU','GIM','CAR1','CAR2'];
   const OPTIONAL_OP_SERVICES = ['OP1','OP2','OP3'];
   const ROW_SERVICES = ['ICU','GIM','CAR1','CAR2','Resp','Nephro','OP1','OP2','OP3','Echo','Weekend'];
   const OP_SERVICES = ['OP1','OP2','OP3'];
@@ -864,18 +739,6 @@ function exportMasterPDF(){
     return service === 'ICU' ? fairnessWeight(person,'icu') : fairnessWeight(person,'service');
   }
 
-
-  function computeIcuTargetsForRange(state, weeks, store){
-    const eligible = state.physicians.filter(p => canDoService(p, 'ICU'));
-    const totalEligibleFte = eligible.reduce((sum, p) => sum + Math.max(0.01, p.fte || 1.0), 0) || 1;
-    const historicalDone = eligible.reduce((sum, p) => sum + ((store[p.id]?.serviceCounts?.ICU) || 0), 0);
-    const blockIcuWeeks = weeks.length;
-    const totalIcuWeeks = historicalDone + blockIcuWeeks;
-    return Object.fromEntries(
-      eligible.map(p => [p.id, totalIcuWeeks * (Math.max(0.01, p.fte || 1.0) / totalEligibleFte)])
-    );
-  }
-
   function computeServiceTargets(state, weeks, services){
     const targets = {};
     (services || MAJOR_SERVICES).forEach(service => {
@@ -957,73 +820,13 @@ function exportMasterPDF(){
 
   
 
-
-  function seedLocumWeeklyCoverage(state, weeks, availability, store){
-    const weekMap = Object.fromEntries(weeks.map(w => [w.weekStart, w]));
-    (state.locums || []).forEach(locum => {
-      (locum.weeklyCoverage || []).forEach(entry => {
-        const week = weekMap[entry.weekStart];
-        if(!week || week.locked) return;
-        if(!availability[locum.id]?.[week.weekStart]?.serviceAvailable) return;
-        (entry.services || []).forEach(service => {
-          if(!MAJOR_SERVICES.includes(service)) return;
-          if(!week.services[service]){
-            week.services[service] = locum.id;
-            addAssignmentChargeSimple(store, state, locum.id, 'service', service);
-          }
-        });
-      });
-    });
-  }
-
-  function seedLocumWeekends(state, weeks, availability, store){
-    const weekMap = Object.fromEntries(weeks.map(w => [w.weekendStart, w]));
-    (state.locums || []).forEach(locum => {
-      (locum.weekendDates || []).forEach(date => {
-        const week = weekMap[date];
-        if(!week || week.locked) return;
-        if(!availability[locum.id]?.[week.weekStart]?.weekendAvailable) return;
-        if(!week.weekendOwner){
-          week.weekendOwner = locum.id;
-          addAssignmentChargeSimple(store, state, locum.id, 'weekend');
-        }
-      });
-    });
-  }
-
-  function seedLocumNightCalls(state, weeks, availability, store, out, map, perMonth, perWeek){
-    const validDates = new Set();
-    weeks.forEach(week => {
-      const mon = parseDate(week.weekStart);
-      for(let i=0;i<5;i++) validDates.add(iso(addDays(mon,i)));
-    });
-    (state.locums || []).forEach(locum => {
-      (locum.callDates || []).forEach(date => {
-        if(!validDates.has(date)) return;
-        const week = weeks.find(w => date >= w.weekStart && date <= w.weekEnd);
-        if(!week || week.locked) return;
-        if(!availability[locum.id]?.[week.weekStart]?.nightAvailable) return;
-        const month = monthKey(date);
-        if(map[date]) return;
-        out.push({ date, owner: locum.id, weekend:false, weekStart:week.weekStart });
-        map[date] = locum.id;
-        perMonth[`${locum.id}:${month}`] = (perMonth[`${locum.id}:${month}`]||0)+1;
-        perWeek[`${locum.id}:${week.weekStart}`] = (perWeek[`${locum.id}:${week.weekStart}`]||0)+1;
-        addAssignmentChargeSimple(store, state, locum.id, 'night');
-      });
-    });
-  }
-
-
-  function assignMajorServices(state, weeks, availability){
+function assignMajorServices(state, weeks, availability){
     const store = initFairnessStore(state);
-    seedLocumWeeklyCoverage(state, weeks, availability, store);
     const requiredTargets = computeServiceTargets(state, weeks, REQUIRED_SERVICES);
-    const icuTargets = computeIcuTargetsForRange(state, weeks, store);
 
+    // Phase 1: distribute required services globally across the whole block.
     REQUIRED_SERVICES.forEach(service => {
       weeks.forEach(week => {
-        if(week.services[service]) return;
         const assigned = peopleAssignedThisWeek(week);
         const candidates = state.physicians.filter(p => {
           if(!canDoService(p, service)) return false;
@@ -1054,9 +857,9 @@ function exportMasterPDF(){
       });
     });
 
+    // Phase 2: fill optional OP services in priority order only if feasible.
     OPTIONAL_OP_SERVICES.forEach(service => {
       weeks.forEach(week => {
-        if(week.services[service]) return;
         const assigned = peopleAssignedThisWeek(week);
         const candidates = state.physicians.filter(p => {
           if(!canDoService(p, service)) return false;
@@ -1078,6 +881,7 @@ function exportMasterPDF(){
       });
     });
 
+    // Echo after major services. Keep deterministic rotation, but only among eligible paired holders.
     weeks.forEach((week, idx) => {
       const echoCandidates = state.physicians.filter(p => p.echoEligible && availability[p.id][week.weekStart].serviceAvailable && ECHO_ALLOWED.includes(getPrimaryServiceForPerson(week,p.id)))
         .sort((a,b) => {
@@ -1114,13 +918,10 @@ function exportMasterPDF(){
 
   function assignWeekendOwners(state, weeks, availability){
     const store = initFairnessStore(state);
-    seedLocumWeekends(state, weeks, availability, store);
     weeks.forEach((week, idx) => {
-      if(week.locked) return;
-      if(week.weekendOwner) return;
       const month = monthKey(week.weekendStart);
       const monthCounts = Object.fromEntries(state.physicians.map(p => [p.id, 0]));
-      weeks.slice(0,idx).forEach(prev => { if(prev.weekendOwner && state.physicians.some(p => p.id===prev.weekendOwner)) monthCounts[prev.weekendOwner] = (monthCounts[prev.weekendOwner]||0)+ (monthKey(prev.weekendStart)===month?1:0); });
+      weeks.slice(0,idx).forEach(prev => { if(prev.weekendOwner) monthCounts[prev.weekendOwner] = (monthCounts[prev.weekendOwner]||0)+ (monthKey(prev.weekendStart)===month?1:0); });
       const candidates = state.physicians.filter(p => p.weekendEligible && availability[p.id][week.weekStart].weekendAvailable && (monthCounts[p.id]||0) < 1)
         .sort((a,b) => {
           const aScore = currentScore(store, a.id, 'weekend') + weekendPreferenceScore(weeks, idx, a.id);
@@ -1148,16 +949,13 @@ function exportMasterPDF(){
     const map = {};
     const perMonth = {};
     const perWeek = {};
-    seedLocumNightCalls(state, weeks, availability, store, out, map, perMonth, perWeek);
 
     weeks.forEach((week, idx) => {
-      if(week.locked) return;
       const mon = parseDate(week.weekStart);
       for(let i=0;i<5;i++){
         const date = iso(addDays(mon,i));
         const month = monthKey(date);
         const prevWeekendOwner = i===0 && idx>0 ? weeks[idx-1].weekendOwner : '';
-        if(map[date]) continue;
         const candidates = state.physicians.filter(p => {
           if(!p.nightEligible) return false;
           if(!availability[p.id][week.weekStart].nightAvailable) return false;
@@ -1215,7 +1013,7 @@ function exportMasterPDF(){
       MAJOR_SERVICES.forEach(service => {
         const owner = week.services[service];
         if(!owner){ if(!OPTIONAL_OP_SERVICES.includes(service)) issues.push({ level:'warning', code:'service-unfilled', message:`${service} unfilled`, weekStart:week.weekStart }); return; }
-        if(map[owner]?.type !== 'locum' && !canDoService(map[owner], service)) issues.push({ level:'error', code:'service-eligibility', message:`${owner} not eligible for ${service}`, weekStart:week.weekStart });
+        if(!canDoService(map[owner], service)) issues.push({ level:'error', code:'service-eligibility', message:`${owner} not eligible for ${service}`, weekStart:week.weekStart });
         if(assignedPeople[owner]) issues.push({ level:'error', code:'double-major-service', message:`${owner} has multiple major services`, weekStart:week.weekStart });
         assignedPeople[owner] = service;
       });
@@ -1236,7 +1034,7 @@ function exportMasterPDF(){
 
     nights.filter(n => !n.weekend).forEach(n => {
       if(!n.owner){ issues.push({ level:'warning', code:'night-unfilled', message:`Night call unfilled on ${n.date}`, date:n.date }); return; }
-      if(map[n.owner]?.type !== 'locum' && !canDoService(map[n.owner], 'Night')) issues.push({ level:'error', code:'night-eligibility', message:`${n.owner} not eligible for night call`, date:n.date });
+      if(!canDoService(map[n.owner], 'Night')) issues.push({ level:'error', code:'night-eligibility', message:`${n.owner} not eligible for night call`, date:n.date });
       const prev = iso(addDays(parseDate(n.date), -1));
       if(nightMap[prev] === n.owner) issues.push({ level:'error', code:'back-to-back-night-calls', message:`${n.owner} has back to back night calls`, date:n.date });
       const mk = `${n.owner}:${monthKey(n.date)}`;
@@ -1369,92 +1167,6 @@ function exportMasterPDF(){
     applyNightOverride
   };
 })();
-
-function tableToCSV(table){
-  const rows=[...table.querySelectorAll("tr")];
-  return rows.map(r=>[...r.children].map(c=>'"'+c.innerText.replace(/"/g,'""')+'"').join(",")).join("\n");
-}
-
-function downloadCSV(csv,name){
-  const blob=new Blob([csv],{type:"text/csv"});
-  const url=URL.createObjectURL(blob);
-  const a=document.createElement("a");
-  a.href=url;a.download=name;a.click();
-  URL.revokeObjectURL(url);
-}
-
-function exportMasterExcel(){
-  const table=document.querySelector(".fit-master table");
-  if(!table) return alert("No master schedule found");
-  downloadCSV(tableToCSV(table),"master_schedule.csv");
-}
-
-function exportNightExcel(){
-  const state = window.AppState && window.AppState.loadState ? window.AppState.loadState() : null;
-  const nights = (state && state.draftNightManual) ? state.draftNightManual : [];
-  if(!nights.length) return alert("No night call calendar found");
-  const people = Object.fromEntries([...(state?.physicians || []), ...(state?.locums || [])].map(p => [p.id, p.name || p.id]));
-  const rows = [["Date","Owner","Type"]].concat(
-    nights.map(n => [
-      n.date || "",
-      people[n.owner] || n.owner || "",
-      n.weekend ? "Weekend call" : "Weekday night call"
-    ])
-  );
-  const csv = rows.map(r => r.map(v => '"' + String(v).replace(/"/g,'""') + '"').join(",")).join("\n");
-  downloadCSV(csv, "night_call.csv");
-}
-
-function exportMasterPDF(){
-  const wrap = document.querySelector('.fit-master');
-  const table = wrap ? wrap.querySelector('table') : null;
-  if(!table){
-    alert("Master schedule not found");
-    return;
-  }
-
-  const html = table.outerHTML;
-  const win = window.open('', '_blank');
-  win.document.write(`
-    <html>
-      <head>
-        <title>Master Schedule</title>
-        <style>
-          @page { size: landscape; margin: 10mm; }
-          body { font-family: Arial, Helvetica, sans-serif; margin: 0; color: #111; }
-          .print-wrap { width: 100%; }
-          table { width: 100%; border-collapse: collapse; table-layout: fixed; }
-          th, td { border: 1px solid #d6d6d6; padding: 6px 4px; font-size: 11px; text-align: center; vertical-align: top; }
-          th.service-col, td.week-row-label { width: 110px; text-align: left; }
-          .small { font-size: 10px; color: #666; }
-          .service-header { font-weight: 700; }
-          .chip, .day-owner {
-            display: inline-block;
-            padding: 2px 6px;
-            border-radius: 999px;
-            font-size: 10px;
-            line-height: 1.2;
-            white-space: nowrap;
-            border: 1px solid #d9d9d9;
-            background: #f7f7f7;
-            color: #111;
-          }
-          .service-cell.mine, .my-week-row td { background: #fafafa; }
-          .service-ICU, .service-GIM, .service-CAR1, .service-CAR2, .service-Resp, .service-Nephro,
-          .service-OP1, .service-OP2, .service-OP3, .service-Echo, .service-Weekend { background: transparent; }
-          .lock-toggle, .btn, button { display: none !important; }
-        </style>
-      </head>
-      <body>
-        <div class="print-wrap">${html}</div>
-      </body>
-    </html>
-  `);
-  win.document.close();
-  win.focus();
-  win.print();
-}
-
 </script>
 <script>(function(){
   const PAGE = window.PAGE_TYPE || document.body?.dataset?.page || 'index';
@@ -1533,7 +1245,7 @@ function chipForOwner(state, ownerId, kind=''){
         </main>
         <aside class="inspector">
           <h3>${safe(inspectorTitle)}</h3>
-          <div id="inspectorContent"></div>
+          
         </aside>
       </div>`;
   }
@@ -1552,7 +1264,7 @@ function chipForOwner(state, ownerId, kind=''){
         <div class="brand">Department Scheduling</div>
         <p class="subtitle">Open the tool you need. All pages share the same local saved state.</p>
         <div class="home-grid">
-          <a class="portal-link" href="admin.html"><h2>Physician Portal</h2><div>Generate, review, validate, override, and publish.</div></a>
+          <a class="portal-link" href="admin.html"><h2>Admin Dashboard</h2><div>Generate, review, validate, override, and publish.</div></a>
           <a class="portal-link" href="physician.html"><h2>Physician Portal</h2><div>See assignments and submit requests.</div></a>
           <a class="portal-link" href="locum.html"><h2>Locum Portal</h2><div>Choose service coverage and explicit call dates.</div></a>
           <a class="portal-link" href="mobile_snapshot.html"><h2>Mobile Snapshot</h2><div>Read only quick view.</div></a>
@@ -1565,34 +1277,15 @@ function chipForOwner(state, ownerId, kind=''){
     return state.generatedSummary;
   }
 
-  
-  function rangesOverlap(startA, endA, startB, endB){
-    if(!startA || !endA || !startB || !endB) return false;
-    return !(endA < startB || startA > endB);
-  }
-
-  function getPublishedConflict(state, start, end){
-    return (state.publishedArchives || []).find(a => rangesOverlap(start, end, a.start, a.end)) || null;
-  }
-
-  function getPublishedExactRange(state, start, end){
-    return (state.publishedArchives || []).find(a => a.start === start && a.end === end) || null;
-  }
-
   function adminTopActions(state){
-    const start = state.settings?.scheduleStart || '';
-    const end = state.settings?.scheduleEnd || '';
-    const exact = getPublishedExactRange(state, start, end);
     return `
       <div class="top-inputs">
-        <label>Start</label><input id="adminStart" type="date" value="${safe(start)}">
-        <label>End</label><input id="adminEnd" type="date" value="${safe(end)}">
-        <button class="primary" id="generateBtn">Generate Fresh</button>
-        <button class="ghost" id="stableGenerateBtn">Stable Regenerate</button>
+        <label>Start</label><input id="adminStart" type="date" value="${safe(state.settings.scheduleStart || '')}">
+        <label>End</label><input id="adminEnd" type="date" value="${safe(state.settings.scheduleEnd || '')}">
+        <button class="primary" id="generateBtn">Generate Schedule</button>
         <button class="ghost" id="clearDraftBtn">Clear Draft</button>
         <button class="ghost" id="reloadBtn">Reload Saved Data</button>
         <button class="success" id="publishBtn">Finalize and Publish</button>
-        ${exact ? `<button class="btn warn" id="topUnpublishBtn">Unpublish ${safe(exact.start)} - ${safe(exact.end)}</button>` : ''}
       </div>`;
   }
 
@@ -1611,16 +1304,9 @@ function chipForOwner(state, ownerId, kind=''){
   function renderAdmin(){
     const state = S();
     const tabs = [
-      ['overview','Overview'],
-      ['master','Master Schedule'],
-      ['night','Night Call Calendar'],
-      ['requests','Requests'],
-      ['fairness','Fairness'],
-      ['overrides','Overrides'],
-      ['locums','Locum Coverage'],
-      ['publish','Publish Review']
+      ['overview','Overview'],['master','Master Schedule'],['night','Night Call Calendar'],['requests','Requests'],['fairness','Fairness'],['overrides','Overrides'],['physicians','Physician Summary'],['locums','Locum Coverage'],['publish','Publish Review']
     ].map((x,i) => ({key:x[0], label:x[1], active:i===0}));
-    document.body.innerHTML = baseShell('Physician Portal','Draft and published schedule control',tabs,'');
+    document.body.innerHTML = baseShell('Admin Dashboard','Draft and published schedule control',tabs,'Assignment Inspector');
     el('#topActions').innerHTML = adminTopActions(state);
     renderAdminSummaryBar();
     const active = { key:'overview' };
@@ -1633,33 +1319,35 @@ function chipForOwner(state, ownerId, kind=''){
       const inspector = el('#inspectorContent');
       if(active.key === 'overview'){
         main.innerHTML = renderAdminOverview(st, summary);
-        if(inspector) inspector.innerHTML = renderOverviewInspector(st, summary);
+        inspector.innerHTML = renderOverviewInspector(st, summary);
       } else if(active.key === 'master'){
         main.innerHTML = renderMasterSchedule(st);
-        if(inspector) inspector.innerHTML = '';
+        inspector.innerHTML = '<div class="detail-box">Click a schedule cell to manually reassign that weekly service or weekend owner.</div>';
         bindMasterSchedule();
       } else if(active.key === 'night'){
         main.innerHTML = renderNightCalendar(st);
-        if(inspector) inspector.innerHTML = '';
+        inspector.innerHTML = '<div class="detail-box">Click a night cell to manually reassign call. Weekend cells update the weekend owner.</div>';
         bindNightCalendar();
       } else if(active.key === 'requests'){
         main.innerHTML = renderRequestsAdmin(st);
-        if(inspector) inspector.innerHTML = '';
+        inspector.innerHTML = '<div class="detail-box">Review incoming requests. Vacation, no call, no night call, and weekends off are hard blocks. Resp and nephro requests are soft preferences.</div>';
         bindRequestAdmin();
       } else if(active.key === 'fairness'){
         main.innerHTML = renderFairness(st, summary);
-        if(inspector) inspector.innerHTML = '';
-        bindFairnessRangeControls('admin', () => redraw('fairness'));
+        inspector.innerHTML = '<div class="detail-box">Fairness is shown by category. DC weighting affects weekly services, weekends, and weekday call. BB weighting affects ICU and weekday call.</div>';
       } else if(active.key === 'overrides'){
         main.innerHTML = renderOverrides(st);
-        if(inspector) inspector.innerHTML = '';
+        inspector.innerHTML = '<div class="detail-box">Each manual change logs the original owner, the replacement, and the timestamp.</div>';
         bindOverrides();
+      } else if(active.key === 'physicians'){
+        main.innerHTML = renderPhysicianSummary(st, summary);
+        inspector.innerHTML = '<div class="detail-box">These cards summarize burden and approved requests for each physician.</div>';
       } else if(active.key === 'locums'){
         main.innerHTML = renderLocumCoverage(st);
-        if(inspector) inspector.innerHTML = '';
+        inspector.innerHTML = '<div class="detail-box">Locums are not in the automatic pooled call algorithm. Admin can assign them manually where they explicitly volunteered.</div>';
       } else if(active.key === 'publish'){
         main.innerHTML = renderPublishReview(st, summary);
-        if(inspector) inspector.innerHTML = '';
+        inspector.innerHTML = '<div class="detail-box">Publish copies Draft Schedule to Published Schedule as a snapshot. Drafts can continue changing afterward.</div>';
         bindPublishReview();
       }
     }
@@ -1699,6 +1387,15 @@ function chipForOwner(state, ownerId, kind=''){
               <div class="quick-card"><strong>Fairness Snapshot</strong><div class="small">See category burden table in the Fairness section.</div></div>
             </div>
           </div>
+          <div class="card">
+            <div class="section-title"><h2>Quick Links</h2></div>
+            <div class="inline-actions">
+              <button class="btn" data-jump="master">Open Master Schedule</button>
+              <button class="btn" data-jump="night">Open Night Call View</button>
+              <button class="btn" data-jump="requests">Open Requests View</button>
+              <button class="btn" data-jump="fairness">Open Fairness View</button>
+            </div>
+          </div>
         </div>
         <div class="card">
           <div class="section-title"><h2>Top Warnings</h2></div>
@@ -1710,7 +1407,22 @@ function chipForOwner(state, ownerId, kind=''){
   }
 
   function renderOverviewInspector(state, summary){
-    return '';
+    const fairness = (summary.fairnessSummary||[]).slice(0,6);
+    return `
+      <div class="detail-box">
+        <strong>Schedule Status</strong>
+        <div class="kv" style="margin-top:10px">
+          <div>Range</div><div>${safe(state.settings.scheduleStart || '—')} to ${safe(state.settings.scheduleEnd || '—')}</div>
+          <div>Draft Weeks</div><div>${(state.draftWeeks||[]).length}</div>
+          <div>Published Weeks</div><div>${(state.publishedWeeks||[]).length}</div>
+        </div>
+      </div>
+      <div class="detail-box">
+        <strong>Lowest Current Burden</strong>
+        <div class="list" style="margin-top:10px">
+          ${fairness.map(f => `<div class="list-item"><strong>${safe(f.name)}</strong><div class="small">Composite ${f.compositeScore} · ICU ${f.icuWeeks} · Weekends ${f.weekends} · Nights ${f.nightCalls}</div></div>`).join('') || '<div class="small">Generate a draft to see fairness.</div>'}
+        </div>
+      </div>`;
   }
 
   function renderMasterSchedule(state){
@@ -1720,7 +1432,7 @@ function chipForOwner(state, ownerId, kind=''){
     return `
       <div class="card">
         <div class="section-title"><h2>Master Weekly Schedule</h2>${badge(`${weeks.length} weeks`)}</div>
-        <div class="table-wrap fit-master"><table>
+        <div class="table-wrap"><table>
           <thead>
             <tr>
               <th class="service-col">Week</th>
@@ -1731,15 +1443,7 @@ function chipForOwner(state, ownerId, kind=''){
             ${weeks.map(w => {
               const rowCls = isCurrentWeekRange(w.weekStart, w.weekendEnd) ? 'current-week-row' : '';
               return `<tr class="${rowCls}">
-              <td class="week-row-label">
-                <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
-                  <div>
-                    <div>${safe(fmtDate(w.weekStart))}</div>
-                    <div class="small">${safe(w.weekStart)}${isCurrentWeekRange(w.weekStart, w.weekendEnd) ? ' · Current week' : ''}</div>
-                  </div>
-                  <span class="lock-toggle" title="Lock week" data-lock-week="${w.weekStart}">${w.locked ? '🔒' : '🔓'}</span>
-                </div>
-              </td>
+              <td class="week-row-label"><div>${safe(fmtDate(w.weekStart))}</div><div class="small">${safe(w.weekStart)}${isCurrentWeekRange(w.weekStart, w.weekendEnd) ? ' · Current week' : ''}</div></td>
               ${cols.map(service => {
                 const owner = service === 'Weekend' ? w.weekendOwner : w.services[service];
                 const pinned = !!(w.pinnedServices && w.pinnedServices[service]);
@@ -1756,30 +1460,14 @@ function chipForOwner(state, ownerId, kind=''){
           </tbody>
         </table>
         <div style="margin-top:12px;display:flex;gap:10px">
-          <button class="btn" onclick="exportMasterExcel()">Export Master Schedule (Excel)</button>
-          <button class="btn" onclick="exportMasterPDF()">Export Master Schedule (PDF)</button>
+          <button class="btn" id="physExportMasterExcel">Export Master Schedule (Excel)</button>
+          <button class="btn" id="physExportMasterPDF">Export Master Schedule (PDF)</button>
         </div></div>
       </div>`;
   }
 
   function bindMasterSchedule(){
-    els('[data-jump]').forEach(btn => btn.addEventListener('click', () => {
-      const target = btn.dataset.jump;
-      const b = el(`.side-nav button[data-tab="${target}"]`);
-      if(b) b.click();
-    }));
-    els('[data-lock-week]').forEach(lock => lock.addEventListener('click', e => {
-      e.stopPropagation();
-      const weekStart = lock.dataset.lockWeek;
-      const state = S();
-      const week = state.draftWeeks.find(w => w.weekStart === weekStart);
-      if(!week) return;
-      week.locked = !week.locked;
-      state.generatedSummary = window.SchedulerEngine.recomputeDraftSummary(state);
-      window.AppState.saveState(state);
-      renderAdmin();
-      const tab = el('.side-nav button[data-tab="master"]'); if(tab) tab.click();
-    }));
+    els('[data-jump]').forEach(btn => btn.addEventListener('click', () => { const target = btn.dataset.jump; const b = el(`.side-nav button[data-tab="${target}"]`); if(b) b.click(); }));
     els('[data-pin]').forEach(pin => pin.addEventListener('click', e => {
       e.stopPropagation();
       const [weekStart, target] = pin.dataset.pin.split('|');
@@ -1794,39 +1482,30 @@ function chipForOwner(state, ownerId, kind=''){
       const tab = el('.side-nav button[data-tab="master"]'); if(tab) tab.click();
     }));
     els('.assign-cell').forEach(cell => cell.addEventListener('click', e => {
-      if(e.target.closest('[data-pin]') || e.target.closest('.inline-cell-editor')) return;
+      if(e.target.closest('[data-pin]')) return;
       const state = S();
       const week = state.draftWeeks.find(w => w.weekStart === cell.dataset.week);
       const target = cell.dataset.target;
-      if(!week) return;
-      if(week.locked){
-        alert('This week is locked. Unlock it first to change assignments.');
-        return;
-      }
-      const everyone = [...state.physicians, ...state.locums].sort((a,b) => a.name.localeCompare(b.name));
-      const currentOwner = target === 'Weekend' ? week.weekendOwner : week.services[target];
-      cell.dataset.originalHtml = cell.innerHTML;
-      cell.innerHTML = `
-        <div class="inline-cell-editor">
-          <select class="field inline-cell-select">
-            <option value="">Leave Unfilled</option>
-            ${everyone.map(p => `<option value="${p.id}" ${p.id===currentOwner?'selected':''}>${safe(p.name)}${p.type==='locum' ? (p.initials ? ` (${safe(p.initials)})` : ' (Locum)') : ''}</option>`).join('')}
-          </select>
-          <div class="inline-actions" style="margin-top:6px;justify-content:center">
-            <button class="btn primary inline-save">Save</button>
-            <button class="btn inline-cancel">Cancel</button>
+      const options = window.SchedulerEngine.getEligibleOwnersForWeek(state, week, target).map(p => `<option value="${p.id}">${p.name}${p.type==='locum' ? (p.generalLocum?' (Gen)':' → '+(p.coveringPhysician||'Cover')):''}</option>`).join('');
+      el('#inspectorContent').innerHTML = `
+        <div class="detail-box">
+          <strong>Manual Override</strong>
+          <div class="kv" style="margin-top:10px">
+            <div>Week</div><div>${safe(week.weekStart)}</div>
+            <div>Assignment</div><div>${safe(target)}</div>
+            <div>Pinned</div><div>${week.pinnedServices && week.pinnedServices[target] ? 'Yes' : 'No'}</div>
+          </div>
+        </div>
+        <div class="detail-box">
+          <label class="small">Select replacement</label>
+          <select id="overrideOwner" class="field" style="width:100%;margin-top:8px"><option value="">Leave Unfilled</option>${options}</select>
+          <div class="inline-actions" style="margin-top:12px">
+            <button class="btn primary" id="saveWeekOverride">Save Change</button>
           </div>
         </div>`;
-      cell.querySelector('.inline-cancel').onclick = ev => {
-        ev.stopPropagation();
-        cell.innerHTML = cell.dataset.originalHtml || '';
-        bindMasterSchedule();
-      };
-      cell.querySelector('.inline-save').onclick = ev => {
-        ev.stopPropagation();
-        const ownerId = cell.querySelector('.inline-cell-select').value;
+      el('#saveWeekOverride').onclick = () => {
         const fresh = S();
-        window.SchedulerEngine.applyWeekOverride(fresh, week.weekStart, target, ownerId);
+        window.SchedulerEngine.applyWeekOverride(fresh, week.weekStart, target, el('#overrideOwner').value);
         renderAdmin();
         const tab = el('.side-nav button[data-tab="master"]'); if(tab) tab.click();
       };
@@ -1837,14 +1516,7 @@ function chipForOwner(state, ownerId, kind=''){
     const nights = state.draftNightManual || [];
     if(!nights.length) return `<div class="card"><strong>No night call draft yet.</strong></div>`;
     const months = Array.from(new Set(nights.map(n => n.date.slice(0,7))));
-    return `
-<div>
-${months.map(month => renderMonth(state, month, nights.filter(n => n.date.startsWith(month)))).join('')}
-<div style="margin-top:12px;display:flex;gap:10px">
-<button class="btn" onclick="exportNightExcel()">Export Night Call (Excel)</button>
-<button class="btn" onclick="exportNightPDF()">Export Night Call (PDF)</button>
-</div>
-</div>`;
+    return months.map(month => renderMonth(state, month, nights.filter(n => n.date.startsWith(month)))).join('');
   }
 
   function renderMonth(state, month, entries){
@@ -1877,40 +1549,16 @@ ${months.map(month => renderMonth(state, month, nights.filter(n => n.date.starts
   }
 
   function bindNightCalendar(){
-    els('[data-night-date]').forEach(cell => cell.addEventListener('click', e => {
-      if(e.target.closest('.inline-cell-editor')) return;
+    els('[data-night-date]').forEach(cell => cell.addEventListener('click', () => {
       const state = S();
-      const entry = state.draftNightManual.find(n => n.date === cell.dataset.nightDate) || { date: cell.dataset.nightDate, owner:'', weekend:false };
-      const relatedWeek = state.draftWeeks.find(w => w.weekStart === entry.weekStart || w.weekendStart === entry.date || w.weekendEnd === entry.date);
-      if(relatedWeek?.locked){
-        alert('This week is locked. Unlock it first to change call assignments.');
-        return;
-      }
-      const everyone = [...state.physicians, ...state.locums].sort((a,b) => a.name.localeCompare(b.name));
-      cell.dataset.originalHtml = cell.innerHTML;
-      cell.innerHTML = `
-        <div class="day-num">${safe(entry.date.slice(-2))}</div>
-        <div class="inline-cell-editor" style="margin-top:4px">
-          <select class="field inline-cell-select">
-            <option value="">Leave Unfilled</option>
-            ${everyone.map(p => `<option value="${p.id}" ${p.id===entry.owner?'selected':''}>${safe(p.name)}${p.type==='locum' ? (p.initials ? ` (${safe(p.initials)})` : ' (Locum)') : ''}</option>`).join('')}
-          </select>
-          <div class="inline-actions" style="margin-top:6px;justify-content:center">
-            <button class="btn primary inline-save">Save</button>
-            <button class="btn inline-cancel">Cancel</button>
-          </div>
-        </div>`;
-      cell.querySelector('.inline-cancel').onclick = ev => {
-        ev.preventDefault();
-        ev.stopPropagation();
-        renderAdmin();
-        const tab = el('.side-nav button[data-tab="night"]'); if(tab) tab.click();
-      };
-      cell.querySelector('.inline-save').onclick = ev => {
-        ev.stopPropagation();
-        const ownerId = cell.querySelector('.inline-cell-select').value;
+      const entry = state.draftNightManual.find(n => n.date === cell.dataset.nightDate);
+      const options = window.SchedulerEngine.getEligibleOwnersForNight(state, entry).map(p => `<option value="${p.id}">${p.name}${p.type==='locum' ? (p.generalLocum?' (Gen)':' → '+(p.coveringPhysician||'Cover')):''}</option>`).join('');
+      el('#inspectorContent').innerHTML = `
+        <div class="detail-box"><strong>Manual Reassignment</strong><div class="kv" style="margin-top:10px"><div>Date</div><div>${safe(entry.date)}</div><div>Type</div><div>${entry.weekend ? 'Weekend' : 'Weekday Night'}</div></div></div>
+        <div class="detail-box"><select id="nightOwner" class="field" style="width:100%"><option value="">Leave Unfilled</option>${options}</select><div class="inline-actions" style="margin-top:12px"><button class="btn primary" id="saveNightOverride">Save Change</button></div></div>`;
+      el('#saveNightOverride').onclick = () => {
         const fresh = S();
-        window.SchedulerEngine.applyNightOverride(fresh, entry.date, ownerId);
+        window.SchedulerEngine.applyNightOverride(fresh, entry.date, el('#nightOwner').value);
         renderAdmin();
         const tab = el('.side-nav button[data-tab="night"]'); if(tab) tab.click();
       };
@@ -1919,17 +1567,11 @@ ${months.map(month => renderMonth(state, month, nights.filter(n => n.date.starts
 
   function renderRequestsAdmin(state){
     const people = peopleMap(state);
-    const start = state.settings?.scheduleStart || '';
-    const end = state.settings?.scheduleEnd || '';
-    const inRange = (state.requests || []).filter(r => {
-      if(!start || !end) return true;
-      return !(r.endDate < start || r.startDate > end);
-    });
     return `
       <div class="card">
-        <div class="section-title"><h2>Requests</h2>${badge(`${inRange.length} in range`)}</div>
+        <div class="section-title"><h2>Requests</h2>${badge(`${(state.requests||[]).length} total`)}</div>
         <div class="list">
-          ${inRange.length ? inRange.map(r => `<div class="list-item">
+          ${(state.requests||[]).length ? state.requests.map(r => `<div class="list-item">
             <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;flex-wrap:wrap">
               <div><strong>${safe(people[r.personId]?.name || r.personId)}</strong> · ${safe(requestLabel(r.type))}<div class="small">${safe(r.startDate)} to ${safe(r.endDate)}</div></div>
               <div class="inline-actions">
@@ -1939,7 +1581,7 @@ ${months.map(month => renderMonth(state, month, nights.filter(n => n.date.starts
                   : `<button class="btn" data-req-act="denied" data-req-id="${r.id}">Reject</button>`}
               </div>
             </div>
-          </div>`).join('') : '<div class="list-item">No requests within the current schedule range.</div>'}
+          </div>`).join('') : '<div class="list-item">No requests submitted.</div>'}
         </div>
       </div>`;
   }
@@ -2047,19 +1689,11 @@ ${months.map(month => renderMonth(state, month, nights.filter(n => n.date.starts
   }
 
   function renderFairness(state, summary){
+    const rows = summary.fairnessSummary || [];
     const services = ['ICU','GIM','CAR1','CAR2','OP1','OP2','OP3','Resp','Nephro'];
-    const range = selectedFairnessRange(state, 'admin');
-    const rows = aggregateFairnessRowsForRange(state, range.start, range.end);
-    const publishedCount = (state.publishHistory || []).filter(entry => dateRangesOverlap(range.start, range.end, entry.start || '', entry.end || '')).length;
-    const includesDraft = !!((state.generatedSummary?.fairnessSummary || []).length && dateRangesOverlap(range.start, range.end, state.settings?.scheduleStart || '', state.settings?.scheduleEnd || ''));
     return `
       <div class="card">
-        <div class="section-title"><h2>Fairness</h2>${badge('Published schedules + overlapping draft')}</div>
-        <div class="selector-grid" style="margin-bottom:12px">
-          <div><label class="small">Fairness Start Date</label><input id="fairnessStartDate" class="field" type="date" value="${safe(range.start)}" style="width:100%"></div>
-          <div><label class="small">Fairness End Date</label><input id="fairnessEndDate" class="field" type="date" value="${safe(range.end)}" style="width:100%"></div>
-        </div>
-        <div class="small" style="margin-bottom:10px">${publishedCount} published schedule(s) included${includesDraft ? ' + current draft' : ''}.</div>
+        <div class="section-title"><h2>Fairness</h2>${badge('Detailed by service')}</div>
         <div class="table-wrap"><table class="fairness-tight">
           <thead>
             <tr>
@@ -2073,137 +1707,25 @@ ${months.map(month => renderMonth(state, month, nights.filter(n => n.date.starts
             </tr>
           </thead>
           <tbody>
-            ${rows.length ? rows.map(r => {
-              const note = fairnessNoteForRow(r);
+            ${rows.map(r => {
+              const note = r.id==='DC' ? '0.5 weeks/weekends/call' : (r.id==='BB' ? '0.8 ICU/call' : '1.0');
               const majorTotal = services.reduce((sum,s)=>sum + (r.serviceCounts?.[s] || 0), 0);
               return `<tr>
                 <td><strong>${safe(r.name)}</strong></td>
                 <td class="small">${safe(note)}</td>
                 ${services.map(s => `<td>${r.serviceCounts?.[s] || 0}</td>`).join('')}
                 <td>${majorTotal}</td>
-                <td>${r.nightCalls} <span class="small">(${Number(r.weighted?.nightCalls || 0).toFixed(2).replace(/\.00$/,'')})</span></td>
-                <td>${r.weekends} <span class="small">(${Number(r.weighted?.weekends || 0).toFixed(2).replace(/\.00$/,'')})</span></td>
+                <td>${r.nightCalls} <span class="small">(${r.weighted.nightCalls})</span></td>
+                <td>${r.weekends} <span class="small">(${r.weighted.weekends})</span></td>
                 <td><strong>${safe(String(r.compositeScore))}</strong></td>
               </tr>`;
-            }).join('') : `<tr><td colspan="${services.length + 5}" class="small">No fairness data found for the selected dates.</td></tr>`}
+            }).join('')}
           </tbody>
         </table></div>
       </div>`;
   }
 
-  
-  function csvEscape(value){
-    const s = String(value ?? '');
-    return /[",\n]/.test(s) ? '"' + s.replace(/"/g,'""') + '"' : s;
-  }
-  function downloadCsv(filename, rows){
-    const csv = rows.map(row => row.map(csvEscape).join(',')).join('\n');
-    const blob = new Blob([csv], { type:'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 500);
-  }
-  function buildMasterScheduleRows(state){
-    const weeks = state.draftWeeks || [];
-    const cols = ['Week Start','Week End','ICU','GIM','CAR1','CAR2','Resp','Nephro','OP1','OP2','OP3','Echo','Weekend','Locked'];
-    const rows = [cols];
-    weeks.forEach(w => {
-      rows.push([
-        w.weekStart || '',
-        w.weekEnd || '',
-        w.services?.ICU || '',
-        w.services?.GIM || '',
-        w.services?.CAR1 || '',
-        w.services?.CAR2 || '',
-        w.services?.Resp || '',
-        w.services?.Nephro || '',
-        w.services?.OP1 || '',
-        w.services?.OP2 || '',
-        w.services?.OP3 || '',
-        w.services?.Echo || '',
-        w.weekendOwner || '',
-        w.locked ? 'Yes' : 'No'
-      ]);
-    });
-    return rows;
-  }
-  function buildNightScheduleRows(state){
-    const nights = state.draftNightManual || [];
-    const rows = [['Date','Week Start','Owner','Type']];
-    nights.forEach(n => rows.push([n.date || '', n.weekStart || '', n.owner || '', n.weekend ? 'Weekend' : 'Weekday Night']));
-    return rows;
-  }
-  function buildFairnessRows(summary){
-    const rows = [['Physician','FTE Notes','ICU','GIM','CAR1','CAR2','OP1','OP2','OP3','Resp','Nephro','Major Weeks','Weekday Call','Weekday Call Weighted','Weekend Call','Weekend Call Weighted','Composite']];
-    (summary.fairnessSummary || []).forEach(r => {
-      const note = r.id==='DC' ? '0.5 weeks/weekends/call' : (r.id==='BB' ? '0.8 ICU/call' : '1.0');
-      const services = ['ICU','GIM','CAR1','CAR2','OP1','OP2','OP3','Resp','Nephro'];
-      const majorTotal = services.reduce((sum,s)=>sum + (r.serviceCounts?.[s] || 0), 0);
-      rows.push([
-        r.name || r.id || '',
-        note,
-        r.serviceCounts?.ICU || 0,
-        r.serviceCounts?.GIM || 0,
-        r.serviceCounts?.CAR1 || 0,
-        r.serviceCounts?.CAR2 || 0,
-        r.serviceCounts?.OP1 || 0,
-        r.serviceCounts?.OP2 || 0,
-        r.serviceCounts?.OP3 || 0,
-        r.serviceCounts?.Resp || 0,
-        r.serviceCounts?.Nephro || 0,
-        majorTotal,
-        r.nightCalls || 0,
-        r.weighted?.nightCalls || 0,
-        r.weekends || 0,
-        r.weighted?.weekends || 0,
-        r.compositeScore || 0
-      ]);
-    });
-    return rows;
-  }
-  function renderExports(state, summary){
-    const start = state.settings?.scheduleStart || 'schedule';
-    const end = state.settings?.scheduleEnd || 'range';
-    return `
-      <div class="card">
-        <div class="section-title"><h2>Exports</h2>${badge('Excel-ready CSV')}</div>
-        <div class="list">
-          <div class="list-item">
-            <div><strong>Master Schedule</strong><div class="small">Exports the full weekly assignment grid.</div></div>
-            <button class="btn primary" id="exportMasterBtn">Export Master Schedule</button>
-          </div>
-          <div class="list-item">
-            <div><strong>Night Call Schedule</strong><div class="small">Exports all weekday and weekend call dates.</div></div>
-            <button class="btn primary" id="exportNightBtn">Export Night Schedule</button>
-          </div>
-          <div class="list-item">
-            <div><strong>Fairness</strong><div class="small">Exports physician fairness totals and weighted call/weekend burden.</div></div>
-            <button class="btn primary" id="exportFairnessBtn">Export Fairness</button>
-          </div>
-        </div>
-        <div class="detail-box" style="margin-top:14px">Files download as CSV and open directly in Excel.</div>
-      </div>`;
-  }
-  function bindExports(){
-    const state = S();
-    const summary = ensureSummary(state);
-    const start = state.settings?.scheduleStart || 'schedule';
-    const end = state.settings?.scheduleEnd || 'range';
-    const base = `${start}_to_${end}`;
-    const master = el('#exportMasterBtn');
-    const night = el('#exportNightBtn');
-    const fairness = el('#exportFairnessBtn');
-    if(master) master.onclick = () => downloadCsv(`master_schedule_${base}.csv`, buildMasterScheduleRows(state));
-    if(night) night.onclick = () => downloadCsv(`night_schedule_${base}.csv`, buildNightScheduleRows(state));
-    if(fairness) fairness.onclick = () => downloadCsv(`fairness_${base}.csv`, buildFairnessRows(summary));
-  }
-
-function renderOverrides(state){
+  function renderOverrides(state){
     return `
       <div class="card">
         <div class="section-title"><h2>Overrides</h2><button class="btn" id="clearOverridesOnly">Clear Log</button></div>
@@ -2214,67 +1736,18 @@ function renderOverrides(state){
   }
   function bindOverrides(){ const b = el('#clearOverridesOnly'); if(b) b.onclick = () => { const st=S(); st.overrideLog=[]; window.AppState.saveState(st); renderAdmin(); const tab=el('.side-nav button[data-tab="overrides"]'); if(tab) tab.click(); }; }
 
-  
-
-  function renderLocumCoverage(state){
-    return `<div class="stack">
-      ${state.locums.map(l => `
-        <div class="card">
-          <div class="section-title">
-            <h2>${safe(l.name)}</h2>
-            ${badge(l.generalLocum ? 'General Locum' : `Covering ${l.coveringPhysician || 'Unassigned'}`, l.generalLocum ? 'locum' : 'warn')}
-          </div>
-          <div class="selector-grid" style="grid-template-columns:repeat(2,minmax(0,1fr));gap:12px">
-            <div class="detail-box">
-              <strong>Availability</strong>
-              <div class="small" style="margin-top:8px">Coverage weeks: ${(l.weeklyCoverage||[]).length}</div>
-              <div class="small">Weekday call dates: ${(l.callDates||[]).length}</div>
-              <div class="small">Weekend dates: ${(l.weekendDates||[]).length}</div>
-              <div class="small">Initials: ${safe(l.initials || '—')}</div>
-            </div>
-            <div class="detail-box">
-              <strong>Physician Here For</strong>
-              <div class="small" style="margin-top:8px">${safe(l.generalLocum ? 'General locum' : (l.coveringPhysician || 'Unassigned'))}</div>
-            </div>
-            <div class="detail-box" style="grid-column:1 / -1">
-              <strong>Services Covered</strong>
-              <div class="small" style="margin-top:8px">
-                ${(l.weeklyCoverage||[]).length ? (l.weeklyCoverage||[]).map(e => `${safe(e.weekStart)}: ${safe((e.services||[]).join(', ') || 'None')}`).join('<br>') : 'No weekly coverage entered.'}
-              </div>
-            </div>
-            <div class="detail-box">
-              <strong>Calls Covered</strong>
-              <div class="small" style="margin-top:8px">${(l.callDates||[]).length ? safe((l.callDates||[]).join(', ')) : 'No call dates selected.'}</div>
-            </div>
-            <div class="detail-box">
-              <strong>Weekends Covered</strong>
-              <div class="small" style="margin-top:8px">${(l.weekendDates||[]).length ? safe((l.weekendDates||[]).join(', ')) : 'No weekend dates selected.'}</div>
-            </div>
-          </div>
-        </div>`).join('')}
-    </div>`;
+  function renderPhysicianSummary(state, summary){
+    const requestsByPerson = {};
+    (state.requests||[]).filter(r => r.status === 'approved').forEach(r => { requestsByPerson[r.personId] = (requestsByPerson[r.personId] || 0) + 1; });
+    return `<div class="selector-grid">${(summary.fairnessSummary||[]).map(r => `<div class="card"><div class="section-title"><h2>${safe(r.name)}</h2>${badge(`Score ${r.compositeScore}`)}</div><div class="small">Approved requests: ${requestsByPerson[r.id] || 0}</div><div class="small">Weekly services ${r.weeklyServices} · ICU ${r.icuWeeks}</div><div class="small">Weekends ${r.weekends} · Nights ${r.nightCalls}</div></div>`).join('')}</div>`;
   }
 
-  
-  function renderPublishedScheduleList(state){
-    const archives = (state.publishedArchives || []).slice().sort((a,b) => (a.start || '').localeCompare(b.start || ''));
-    return `
-      <div class="card" style="margin-top:14px">
-        <div class="section-title"><h2>Published Schedules</h2>${badge(`${archives.length} total`)}</div>
-        <div class="list">
-          ${archives.length ? archives.map(a => `<div class="list-item" style="display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap">
-            <div><strong>${safe((a.start || 'Unknown') + ' - ' + (a.end || 'Unknown'))}</strong><div class="small">${safe(a.publishedAt || '')}</div></div>
-            <div class="inline-actions"><button class="btn warn" data-remove-published="${a.id}">Unpublish</button></div>
-          </div>`).join('') : '<div class="list-item">No published schedules yet.</div>'}
-        </div>
-      </div>`;
+  function renderLocumCoverage(state){
+    return `<div class="selector-grid">${state.locums.map(l => `<div class="card"><div class="section-title"><h2>${safe(l.name)}</h2>${badge(l.generalLocum?'General Locum':`Covering ${l.coveringPhysician || 'Unassigned'}`, l.generalLocum?'locum':'warn')}</div><div class="small">Weekly coverage entries: ${(l.weeklyCoverage||[]).length}</div><div class="small">Call dates selected: ${(l.callDates||[]).length}</div><div class="small">Weekend dates selected: ${(l.weekendDates||[]).length}</div></div>`).join('')}</div>`;
   }
 
   function renderPublishReview(state, summary){
     const validation = summary.validation || [];
-    const start = state.settings?.scheduleStart || '';
-    const end = state.settings?.scheduleEnd || '';
-    const conflict = getPublishedConflict(state, start, end);
     return `
       <div class="panel-grid">
         <div class="card">
@@ -2283,84 +1756,25 @@ function renderOverrides(state){
         </div>
         <div class="card">
           <div class="section-title"><h2>Publish</h2></div>
-          <p class="small">A day can only belong to one published schedule. If any published schedule overlaps this date range, publish is blocked until that schedule is unpublished.</p>
-          ${conflict ? `<div class="notice warn">Conflict: ${safe(conflict.start)} - ${safe(conflict.end)} is already published.</div>` : ''}
-          <button class="btn success" id="publishNowBtn" ${conflict ? 'disabled' : ''}>Finalize and Publish</button>
+          <p class="small">Publishing copies Draft Schedule to Published Schedule as a snapshot.</p>
+          <button class="btn success" id="publishNowBtn">Finalize and Publish</button>
         </div>
-      </div>
-      ${renderPublishedScheduleList(state)}`;
+      </div>`;
   }
-  function bindPublishReview(){
-    const b = el('#publishNowBtn');
-    if(b) b.onclick = () => {
-      const state = S();
-      const start = state.settings?.scheduleStart || '';
-      const end = state.settings?.scheduleEnd || '';
-      const conflict = getPublishedConflict(state, start, end);
-      if(conflict){
-        alert(`A published schedule already covers part of this time period: ${conflict.start} - ${conflict.end}. Unpublish it first.`);
-        return;
-      }
-      window.AppState.publishDraft();
-      renderAdmin();
-      alert('Published schedule snapshot saved.');
-    };
-    els('[data-remove-published]').forEach(btn => btn.onclick = () => {
-      const id = btn.dataset.removePublished;
-      const state = S();
-      const target = (state.publishedArchives || []).find(a => a.id === id);
-      const label = target ? `${target.start} - ${target.end}` : 'this published schedule';
-      if(!confirm(`Completely wipe ${label}?`)) return;
-      window.AppState.removePublishedScheduleById(state, id);
-      window.AppState.saveState(state);
-      renderAdmin();
-      alert(`Published schedule removed: ${label}.`);
-    });
-  }
+  function bindPublishReview(){ const b = el('#publishNowBtn'); if(b) b.onclick = () => { window.AppState.publishDraft(); renderAdmin(); alert('Published schedule snapshot saved.'); }; }
 
   function bindAdminTopActions(redraw){
     el('#generateBtn').onclick = () => {
       const start = el('#adminStart').value, end = el('#adminEnd').value;
       if(!start || !end) return alert('Choose both start and end dates.');
-      window.SchedulerEngine.persistGeneratedDraft(start, end, { stable:false });
-      redraw('overview');
-    };
-    if(el('#stableGenerateBtn')) el('#stableGenerateBtn').onclick = () => {
-      const start = el('#adminStart').value, end = el('#adminEnd').value;
-      if(!start || !end) return alert('Choose both start and end dates.');
-      window.SchedulerEngine.persistGeneratedDraft(start, end, { stable:true });
+      window.SchedulerEngine.persistGeneratedDraft(start, end);
       redraw('overview');
     };
     el('#clearDraftBtn').onclick = () => {
       const state = S(); state.draftWeeks=[]; state.draftNightManual=[]; state.generatedSummary={fairnessSummary:[],validation:[]}; window.AppState.saveState(state); redraw('overview');
     };
     el('#reloadBtn').onclick = () => renderAdmin();
-    el('#publishBtn').onclick = () => {
-      const state = S();
-      const start = el('#adminStart').value || state.settings?.scheduleStart || '';
-      const end = el('#adminEnd').value || state.settings?.scheduleEnd || '';
-      const conflict = getPublishedConflict(state, start, end);
-      if(conflict){
-        alert(`A published schedule already covers part of this time period: ${conflict.start} - ${conflict.end}. Unpublish it first.`);
-        return;
-      }
-      window.AppState.publishDraft();
-      redraw('overview');
-      alert('Published schedule snapshot saved.');
-    };
-    const topUnpublish = el('#topUnpublishBtn');
-    if(topUnpublish) topUnpublish.onclick = () => {
-      const state = S();
-      const start = state.settings?.scheduleStart || '';
-      const end = state.settings?.scheduleEnd || '';
-      const exact = window.AppState.getPublishedExactRange ? window.AppState.getPublishedExactRange(state, start, end) : null;
-      if(!exact) return alert('No published schedule exists for this exact date range.');
-      if(!confirm(`Unpublish ${exact.start} - ${exact.end}?`)) return;
-      window.AppState.removePublishedScheduleById(state, exact.id);
-      window.AppState.saveState(state);
-      renderAdmin();
-      alert(`Unpublished ${exact.start} - ${exact.end}.`);
-    };
+    el('#publishBtn').onclick = () => { window.AppState.publishDraft(); redraw('overview'); alert('Published schedule snapshot saved.'); };
   }
 
   function renderDateStrip(container, dates, selection, mode='range'){
@@ -2397,31 +1811,155 @@ function renderOverrides(state){
     document.body.innerHTML = baseShell(title, subtitle, tabs, inspector);
   }
 
+  
+  function availablePortalYears(state){
+    const years = new Set();
+    (state.publishHistory || []).forEach(entry => {
+      const y = (entry.start || '').slice(0,4);
+      if(y) years.add(y);
+    });
+    if(!years.size) years.add(String(new Date().getFullYear()));
+    return Array.from(years).sort();
+  }
+
+  function selectedPortalYear(state){
+    const stored = localStorage.getItem('physPortalYear') || '';
+    const years = availablePortalYears(state);
+    return (stored && years.includes(stored)) ? stored : (years[0] || '');
+  }
+
+  function publishedArchivesForYear(state, year){
+    return (state.publishedArchives || []).filter(a => (a.start || '').slice(0,4) === year);
+  }
+
+  function selectedArchiveForYear(state, year){
+    const archives = publishedArchivesForYear(state, year).slice().sort((a,b) => (a.start || '').localeCompare(b.start || ''));
+    const selectedId = localStorage.getItem('physPublishedArchiveId') || '';
+    return archives.find(a => a.id === selectedId) || archives[0] || null;
+  }
+
+  function archivePeriodLabel(entry){
+    if(!entry) return 'No Published Schedule';
+    if(entry.start && entry.end) return `${entry.start} - ${entry.end}`;
+    return entry.id || 'Published Schedule';
+  }
+
+  function fairnessNoteForRow(r){
+    return r.id==='DC' ? '0.5 weeks/weekends/call' : (r.id==='BB' ? '0.8 ICU/weekends/call' : '1.0');
+  }
+
+  function buildPublishedYearlyFairnessRows(state, year){
+    const map = {};
+    (state.publishHistory || []).forEach(entry => {
+      if((entry.start || '').slice(0,4) !== year) return;
+      (entry.fairnessSummary || []).forEach(row => {
+        if(!map[row.id]){
+          map[row.id] = { id:row.id, name:row.name || row.id, serviceCounts:{ ICU:0,GIM:0,CAR1:0,CAR2:0,OP1:0,OP2:0,OP3:0,Resp:0,Nephro:0,Echo:0 }, nightCalls:0, weekends:0 };
+        }
+        Object.keys(map[row.id].serviceCounts).forEach(service => {
+          map[row.id].serviceCounts[service] += row.serviceCounts?.[service] || 0;
+        });
+        map[row.id].nightCalls += row.nightCalls || 0;
+        map[row.id].weekends += row.weekends || 0;
+      });
+    });
+    return Object.values(map).sort((a,b) => a.id.localeCompare(b.id));
+  }
+
+  function renderTotalFairness(state){
+    const services = ['ICU','GIM','CAR1','CAR2','OP1','OP2','OP3','Resp','Nephro'];
+    const range = selectedFairnessRange(state, 'phys');
+    const rows = aggregateFairnessRowsForRange(state, range.start, range.end);
+    const publishedCount = (state.publishHistory || []).filter(entry => dateRangesOverlap(range.start, range.end, entry.start || '', entry.end || '')).length;
+    const includesDraft = !!((state.generatedSummary?.fairnessSummary || []).length && dateRangesOverlap(range.start, range.end, state.settings?.scheduleStart || '', state.settings?.scheduleEnd || ''));
+    return `
+      <div class="stack">
+        <div class="card">
+          <div class="section-title"><h2>Fairness</h2>${badge('Published schedules + overlapping draft')}</div>
+          <div class="selector-grid" style="margin-bottom:12px">
+            <div><label class="small">Fairness Start Date</label><input id="fairnessStartDate" class="field" type="date" value="${safe(range.start)}" style="width:100%"></div>
+            <div><label class="small">Fairness End Date</label><input id="fairnessEndDate" class="field" type="date" value="${safe(range.end)}" style="width:100%"></div>
+          </div>
+          <div class="small">${publishedCount} published schedule(s) included${includesDraft ? ' + current draft' : ''}.</div>
+        </div>
+        <div class="card">
+          <div class="table-wrap"><table class="fairness-tight">
+            <thead><tr><th>Physician</th><th>FTE Notes</th>${services.map(s => `<th class="service-${s}">${safe(s)}</th>`).join('')}<th>Major Weeks</th><th>Weekday Call</th><th>Weekend Call</th></tr></thead>
+            <tbody>
+              ${rows.length ? rows.map(r => {
+                const majorTotal = services.reduce((sum,s)=>sum + (r.serviceCounts?.[s] || 0), 0);
+                return `<tr><td><strong>${safe(r.name || r.id)}</strong></td><td class="small">${safe(fairnessNoteForRow(r))}</td>${services.map(s => `<td>${r.serviceCounts?.[s] || 0}</td>`).join('')}<td>${majorTotal}</td><td>${r.nightCalls || 0}</td><td>${r.weekends || 0}</td></tr>`;
+              }).join('') : `<tr><td colspan="${services.length + 5}" class="small">No fairness data found for the selected dates.</td></tr>`}
+            </tbody>
+          </table></div>
+        </div>
+      </div>`;
+  }
+
   function renderPhysician(){
     const state = S();
     const currentId = (localStorage.getItem('schedPhysicianSelected') || state.physicians[0].id);
-    const tabs = [['schedule','Master Schedule'],['calls','Night Call'],['request','Submit Request'],['history','Request History']].map((x,i)=>({key:x[0],label:x[1],active:i===0}));
-    getPortalBase('Physician Portal','View assignments and submit requests',tabs,'Physician Details');
-    el('#topActions').innerHTML = `<div class="top-inputs"><label>Physician</label><select id="physicianSelect">${state.physicians.map(p => `<option value="${p.id}" ${p.id===currentId?'selected':''}>${p.name}</option>`).join('')}</select></div>`;
+    const tabs = [['myschedule','My Schedule'],['schedule','Published Schedule'],['calls','Night Call'],['request','Submit Request'],['history','Request History'],['yearlyfairness','Fairness']].map((x,i)=>({key:x[0],label:x[1],active:i===0}));
+    getPortalBase('Physician Portal','View published schedules and submit requests',tabs,null);
+    const inspector = document.querySelector('.inspector'); if(inspector) inspector.remove();
+    const shell = document.querySelector('.page-shell'); if(shell) shell.style.gridTemplateColumns = '240px minmax(0,1fr)';
+    const year = selectedPortalYear(state);
+    const archives = publishedArchivesForYear(state, year).slice().sort((a,b) => (a.start || '').localeCompare(b.start || ''));
+    const selectedArchive = selectedArchiveForYear(state, year);
+    if(selectedArchive) localStorage.setItem('physPublishedArchiveId', selectedArchive.id);
+    const myWeeksOnly = localStorage.getItem('physMyWeeksOnly') === '1';
+    el('#topActions').innerHTML = `<div class="top-inputs"><label>Physician</label><select id="physicianSelect">${state.physicians.map(p => `<option value="${p.id}" ${p.id===currentId?'selected':''}>${p.name}</option>`).join('')}</select><label>Year</label><select id="physPortalYear">${availablePortalYears(state).map(y => `<option value="${y}" ${y===year?'selected':''}>${y}</option>`).join('')}</select><label>Schedule</label><select id="physScheduleSelect">${archives.length ? archives.map(a => `<option value="${a.id}" ${selectedArchive && a.id===selectedArchive.id?'selected':''}>${safe(archivePeriodLabel(a))}</option>`).join('') : `<option value="">No Published Schedule</option>`}</select><label style="display:inline-flex;align-items:center;gap:8px;margin-left:8px"><input type="checkbox" id="physMyWeeksOnly" ${myWeeksOnly?'checked':''}> My Weeks Only</label></div>`;
     renderPhysicianSummaryBar(currentId);
-    let active='schedule';
-    attachTabBehavior(tab => { active=tab; draw(); });
+    let active = localStorage.getItem('physActiveTab') || 'myschedule';
+    attachTabBehavior(tab => { active=tab; localStorage.setItem('physActiveTab', tab); draw(); });
+    setTimeout(() => { const btn = el(`.side-nav button[data-tab="${active}"]`); if(btn) btn.click(); }, 0);
     el('#physicianSelect').onchange = e => { localStorage.setItem('schedPhysicianSelected', e.target.value); renderPhysician(); };
+    if(el('#physPortalYear')) el('#physPortalYear').onchange = e => { localStorage.setItem('physPortalYear', e.target.value); localStorage.removeItem('physPublishedArchiveId'); renderPhysician(); };
+    if(el('#physScheduleSelect')) el('#physScheduleSelect').onchange = e => { localStorage.setItem('physPublishedArchiveId', e.target.value); renderPhysician(); };
+    if(el('#physMyWeeksOnly')) el('#physMyWeeksOnly').onchange = e => { localStorage.setItem('physMyWeeksOnly', e.target.checked ? '1' : '0'); renderPhysician(); const tab=el('.side-nav button[data-tab="schedule"]'); if(tab) tab.click(); };
     function draw(){
       const fresh = S(); const pid = localStorage.getItem('schedPhysicianSelected') || currentId;
-      if(active==='schedule'){
+      if(active==='myschedule'){
+        el('#mainContent').innerHTML = renderMySchedule(fresh,pid);
+      } else if(active==='schedule'){
         el('#mainContent').innerHTML = renderPhysicianSchedule(fresh,pid);
-        el('#inspectorContent').innerHTML = renderPhysicianInspector(fresh,pid);
+        const mxe = el('#physExportMasterExcel'); if(mxe) mxe.onclick = exportMasterExcel;
+        const mxp = el('#physExportMasterPDF'); if(mxp) mxp.onclick = exportMasterPDF;
       } else if(active==='calls'){
         el('#mainContent').innerHTML = renderPhysicianCalls(fresh,pid);
-        el('#inspectorContent').innerHTML = renderPhysicianInspector(fresh,pid);
+        const nxe = el('#physExportNightExcel'); if(nxe) nxe.onclick = exportNightExcel;
+        const nxp = el('#physExportNightPDF'); if(nxp) nxp.onclick = exportNightPDF;
+        const months = Array.from(new Set(((selectedArchiveForYear(fresh, selectedPortalYear(fresh))?.nightAssignments || []).map(n => n.date.slice(0,7))))).sort();
+        const storedMonth = localStorage.getItem('physNightMonth') || '';
+        const activeMonth = months.includes(storedMonth) ? storedMonth : (months[0] || '');
+        const activeIndex = Math.max(0, months.indexOf(activeMonth));
+        const prevBtn = el('#nightPrevMonthBtn');
+        const nextBtn = el('#nightNextMonthBtn');
+        if(prevBtn) prevBtn.onclick = () => {
+          if(activeIndex > 0){
+            localStorage.setItem('physNightMonth', months[activeIndex - 1]);
+            draw();
+          }
+        };
+        if(nextBtn) nextBtn.onclick = () => {
+          if(activeIndex < months.length - 1){
+            localStorage.setItem('physNightMonth', months[activeIndex + 1]);
+            draw();
+          }
+        };
       } else if(active==='request'){
         el('#mainContent').innerHTML = renderPhysicianRequestForm(fresh,pid);
-        el('#inspectorContent').innerHTML = '<div class="detail-box">Click one date, then another date, to highlight a request range as a strip.</div>';
         bindPhysicianRequestForm(pid);
       } else if(active==='history'){
         el('#mainContent').innerHTML = renderPhysicianHistory(fresh,pid);
-        el('#inspectorContent').innerHTML = renderPhysicianInspector(fresh,pid);
+        els('[data-cancel-request]').forEach(btn => btn.addEventListener('click', () => {
+          window.AppState.removeRequest(btn.dataset.cancelRequest);
+          localStorage.setItem('physActiveTab', 'history');
+          renderPhysician();
+        }));
+      } else if(active==='yearlyfairness'){
+        el('#mainContent').innerHTML = renderTotalFairness(fresh);
+        bindFairnessRangeControls('phys', () => draw());
       }
     }
     draw();
@@ -2442,44 +1980,432 @@ function renderOverrides(state){
       </div>`;
   }
 
-  function renderPhysicianSchedule(state,pid){
-    const weeks = (state.publishedWeeks?.length ? state.publishedWeeks : state.draftWeeks) || [];
-    const my = weeks.map(w => ({week:w.weekStart, services: serviceRows.filter(s => s!=='Weekend' && (s==='Weekend' ? w.weekendOwner===pid : w.services[s]===pid)), weekend:w.weekendOwner===pid})).filter(x => x.services.length || x.weekend);
-    return `<div class="card"><div class="section-title"><h2>My Weekly Assignments</h2></div><div class="list">${my.length ? my.map(r => `<div class="list-item"><strong>${safe(r.week)}</strong><div>${r.services.map(s=>badge(s)).join(' ')} ${r.weekend?badge('Weekend','warn'):''}</div></div>`).join('') : '<div class="list-item">No assignments in the current view.</div>'}</div></div>`;
+  
+  function renderMySchedule(state,pid){
+    const selectedArchive = selectedArchiveForYear(state, selectedPortalYear(state));
+    const weeks = selectedArchive?.weeks || [];
+    if(!weeks.length) return `<div class="card"><strong>No published schedule available for the selected year.</strong></div>`;
+    const rows = weeks.map(w => {
+      const services = ['ICU','GIM','CAR1','CAR2','Resp','Nephro','OP1','OP2','OP3','Echo']
+        .filter(service => w.services?.[service] === pid);
+      const weekend = w.weekendOwner === pid;
+      const nights = (selectedArchive?.nightAssignments || []).filter(n => n.owner === pid && n.date >= w.weekStart && n.date <= w.weekEnd);
+      if(!services.length && !weekend && !nights.length) return null;
+      return { weekStart:w.weekStart, weekEnd:w.weekEnd, services, weekend, nights, current:isCurrentWeekRange(w.weekStart, w.weekEnd) };
+    }).filter(Boolean);
+
+    const current = rows.find(r => r.current) || rows.find(r => r.weekStart >= todayIso()) || rows[0];
+    const upcoming = rows.filter(r => r !== current && r.weekEnd >= todayIso());
+
+    return `<div class="stack">
+      ${current ? `<div class="card current-schedule-card">
+        <div class="section-title"><h2>My Schedule</h2>${badge(selectedArchive ? archivePeriodLabel(selectedArchive) : 'Read only')}</div>
+        <div class="upcoming-label">Current Week</div>
+        <div class="list-item current-item">
+          <strong>${safe(fmtDate(current.weekStart))} to ${safe(fmtDate(current.weekEnd))}</strong>
+          <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">
+            ${current.services.map(s => servicePill(s)).join('')}
+            ${current.weekend ? servicePill('Weekend') : ''}
+            ${current.nights.map(n => servicePill(n.weekend ? `Weekend Call ${fmtDate(n.date)}` : `Call ${fmtDate(n.date)}`, 'call')).join('')}
+          </div>
+        </div>
+      </div>` : ''}
+      <div class="card">
+        <div class="section-title"><h2>Weeks to Come</h2>${badge(`${upcoming.length} upcoming`)}</div>
+        <div class="list">
+          ${upcoming.length ? upcoming.map(r => `<div class="list-item ${r.current ? 'current-item' : ''}">
+            <strong>${safe(fmtDate(r.weekStart))} to ${safe(fmtDate(r.weekEnd))}</strong>
+            <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">
+              ${r.services.map(s => servicePill(s)).join('')}
+              ${r.weekend ? servicePill('Weekend') : ''}
+              ${r.nights.map(n => servicePill(n.weekend ? `Weekend Call ${fmtDate(n.date)}` : `Call ${fmtDate(n.date)}`, 'call')).join('')}
+            </div>
+          </div>`).join('') : '<div class="list-item">No future assignments in the selected schedule.</div>'}
+        </div>
+      </div>
+    </div>`;
+  }
+
+  
+  function getPhysicianSelectedArchiveState(){
+    const state = S();
+    const archive = selectedArchiveForYear(state, selectedPortalYear(state));
+    return { state, archive };
+  }
+
+  function tableToCSV(table){
+    const rows = [...table.querySelectorAll("tr")];
+    return rows.map(r => [...r.children].map(c => '"' + c.innerText.replace(/"/g,'""') + '"').join(",")).join("\n");
+  }
+
+  function downloadCSV(csv, name){
+    const blob = new Blob([csv], { type:"text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = name;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function exportMasterExcel(){
+    const table = document.querySelector(".fit-master table");
+    if(!table) return alert("No master schedule found");
+    downloadCSV(tableToCSV(table), "master_schedule.csv");
+  }
+
+  function exportNightExcel(){
+    const payload = getPhysicianSelectedArchiveState();
+    const state = payload.state;
+    const archive = payload.archive;
+    const nights = archive?.nightAssignments || [];
+    if(!nights.length) return alert("No night call calendar found");
+    const people = Object.fromEntries([...(state?.physicians || []), ...(state?.locums || [])].map(p => [p.id, p.name || p.id]));
+    const rows = [["Date","Owner","Type"]].concat(
+      nights.map(n => [
+        n.date || "",
+        people[n.owner] || n.owner || "",
+        n.weekend ? "Weekend call" : "Weekday night call"
+      ])
+    );
+    const csv = rows.map(r => r.map(v => '"' + String(v).replace(/"/g,'""') + '"').join(",")).join("\n");
+    downloadCSV(csv, "night_call.csv");
+  }
+
+  function exportMasterPDF(){
+    const wrap = document.querySelector('.fit-master');
+    const table = wrap ? wrap.querySelector('table') : null;
+    if(!table){
+      alert("Master schedule not found");
+      return;
+    }
+    const payload = getPhysicianSelectedArchiveState();
+    const archive = payload.archive;
+    const range = archive?.start && archive?.end ? `${archive.start} to ${archive.end}` : '';
+    const generated = new Date().toLocaleDateString();
+    const html = table.outerHTML;
+    const win = window.open('', '_blank');
+    win.document.write(`
+      <html>
+        <head>
+          <title>Department Schedule PDF</title>
+          <style>
+            @page { size: landscape; margin: 10mm; }
+            body { font-family: Arial, Helvetica, sans-serif; margin: 0; color: #111; }
+            .print-header{padding:0 0 12px 0;margin-bottom:12px;border-bottom:2px solid #d9e0e6}
+            .print-header h1{margin:0 0 4px 0;font-size:22px}
+            .print-header .sub{font-size:12px;color:#555}
+            .print-wrap { width: 100%; }
+            table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+            th, td { border: 1px solid #d6d6d6; padding: 6px 4px; font-size: 11px; text-align: center; vertical-align: top; }
+            th.service-col, td.week-row-label { width: 110px; text-align: left; }
+            .small { font-size: 10px; color: #666; }
+            .service-header { font-weight: 700; color:#fff; }
+            .assign-chip { display:inline-block; padding:2px 6px; border-radius:999px; font-size:10px; line-height:1.2; white-space:nowrap; border:1px solid #d9d9d9; background:#f7f7f7; color:#111; }
+            .assign-chip.weekend{background:#eef1f4}
+            .assign-chip.locum{background:#f5f3ff}
+            .service-ICU{background:#8f2020!important;color:#fff}
+            .service-GIM{background:#163f73!important;color:#fff}
+            .service-CAR1{background:#1f7a45!important;color:#fff}
+            .service-CAR2{background:#1c6b74!important;color:#fff}
+            .service-Resp{background:#6d3da8!important;color:#fff}
+            .service-Nephro{background:#7a4b1f!important;color:#fff}
+            .service-OP1,.service-OP2,.service-OP3{background:#2f6fad!important;color:#fff}
+            .service-Echo{background:#c76b17!important;color:#fff}
+            .service-Weekend{background:#5b6472!important;color:#fff}
+            .lock-toggle,.btn,button,.pin-toggle{display:none!important}
+          </style>
+        </head>
+        <body>
+          <div class="print-header">
+            <h1>Penticton GIM Schedule</h1>
+            <div class="sub">${range ? `Schedule Range: ${range} · ` : ''}Generated ${generated}</div>
+          </div>
+          <div class="print-wrap">${html}</div>
+        </body>
+      </html>
+    `);
+    win.document.close();
+    win.focus();
+    win.print();
+  }
+
+  function exportNightPDF(){
+    const monthCard = document.querySelector('.physician-night-export-month');
+    if(!monthCard){
+      alert("Night call calendar not found");
+      return;
+    }
+    const payload = getPhysicianSelectedArchiveState();
+    const archive = payload.archive;
+    const range = archive?.start && archive?.end ? `${archive.start} to ${archive.end}` : '';
+    const generated = new Date().toLocaleDateString();
+    const html = monthCard.outerHTML;
+    const win = window.open('', '_blank');
+    win.document.write(`
+      <html>
+        <head>
+          <title>Night Call Calendar</title>
+          <style>
+            body { font-family: Arial, Helvetica, sans-serif; margin: 16px; color: #111; }
+            .print-header{padding:0 0 12px 0;margin-bottom:12px;border-bottom:2px solid #d9e0e6}
+            .print-header h1{margin:0 0 4px 0;font-size:22px}
+            .print-header .sub{font-size:12px;color:#555}
+            .month-card { margin-bottom: 18px; break-inside: avoid; page-break-inside: avoid; border:1px solid #d9e0e6; border-radius:14px; padding:12px; }
+            .month-header { font-size: 18px; font-weight: 700; margin: 0 0 8px 0; }
+            .month-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
+            .day-head { font-size: 12px; font-weight: 700; text-align: center; padding: 4px 0; color:#666; }
+            .day-cell { min-height: 78px; border: 1px solid #cfcfcf; border-radius: 6px; padding: 6px; box-sizing: border-box; background:#fff; }
+            .day-num { font-size: 12px; font-weight: 700; margin-bottom: 4px; }
+            .assign-chip, .day-owner { display:inline-block; padding:2px 6px; border-radius:999px; font-size:10px; line-height:1.2; white-space:nowrap; border:1px solid #d9d9d9; background:#f7f7f7; color:#111; }
+            .weekend { background: #f6f6f6; }
+            .btn, button { display: none !important; }
+            @media print { body { margin: 10mm; } }
+          </style>
+        </head>
+        <body>
+          <div class="print-header">
+            <h1>Penticton GIM Night Call</h1>
+            <div class="sub">${range ? `Schedule Range: ${range} · ` : ''}Generated ${generated}</div>
+          </div>
+          ${html}
+        </body>
+      </html>
+    `);
+    win.document.close();
+    win.focus();
+    win.print();
+  }
+
+function renderPhysicianSchedule(state,pid){
+    const selectedArchive = selectedArchiveForYear(state, selectedPortalYear(state));
+    const baseWeeks = selectedArchive?.weeks || [];
+    if(!baseWeeks.length) return `<div class="card"><strong>No published schedule available for the selected year.</strong></div>`;
+    const cols = ['ICU','GIM','CAR1','CAR2','Resp','Nephro','OP1','OP2','OP3','Echo','Weekend'];
+    const myWeeksOnly = localStorage.getItem('physMyWeeksOnly') === '1';
+    const weeks = myWeeksOnly ? baseWeeks.filter(w => cols.some(service => ((service === 'Weekend' ? w.weekendOwner : w.services[service]) === pid))) : baseWeeks;
+    return `
+      <div class="card">
+        <div class="section-title"><h2>Published Schedule</h2>${badge(selectedArchive ? archivePeriodLabel(selectedArchive) : 'Read only')}</div>
+        <div class="table-wrap fit-master"><table>
+          <thead><tr><th class="service-col">Week</th>${cols.map(service => `<th class="service-header service-${service}">${safe(service)}</th>`).join('')}</tr></thead>
+          <tbody>
+            ${weeks.map(w => {
+              const myWeek = cols.some(service => ((service === 'Weekend' ? w.weekendOwner : w.services[service]) === pid));
+              const rowCls = `${myWeek ? 'my-week-row' : ''} ${isCurrentWeekRange(w.weekStart, w.weekendEnd) ? 'current-week-row' : ''}`.trim();
+              return `<tr class="${rowCls}">
+              <td class="week-row-label"><div>${safe(fmtDate(w.weekStart))}</div><div class="small">${safe(w.weekStart)}${isCurrentWeekRange(w.weekStart, w.weekendEnd) ? ' · Current week' : ''}</div></td>
+              ${cols.map(service => {
+                const owner = service === 'Weekend' ? w.weekendOwner : w.services[service];
+                const mine = owner === pid ? 'mine' : '';
+                return `<td class="service-cell service-${service} ${mine}">${chipForOwner(state, owner, service === 'Weekend' ? 'weekend' : '')}</td>`;
+              }).join('')}
+            </tr>`;
+            }).join('')}
+          </tbody>
+        </table>
+        <div style="margin-top:12px;display:flex;gap:10px">
+          <button class="btn" id="physExportMasterExcel">Export Master Schedule (Excel)</button>
+          <button class="btn" id="physExportMasterPDF">Export Master Schedule (PDF)</button>
+        </div></div>
+      </div>`;
   }
   function renderPhysicianCalls(state,pid){
-    const nights = (state.publishedNightManual?.length ? state.publishedNightManual : state.draftNightManual) || [];
-    const mine = nights.filter(n => n.owner===pid);
-    return `<div class="card"><div class="section-title"><h2>My Call Calendar</h2></div><div class="list">${mine.length ? mine.map(n => `<div class="list-item"><strong>${safe(n.date)}</strong><div class="small">${n.weekend?'Weekend call':'Weekday night call'}</div></div>`).join('') : '<div class="list-item">No calls assigned in the current view.</div>'}</div></div>`;
+    const selectedArchive = selectedArchiveForYear(state, selectedPortalYear(state));
+    const nights = selectedArchive?.nightAssignments || [];
+    if(!nights.length) return `<div class="card"><strong>No night call schedule available for the selected year.</strong></div>`;
+    const months = Array.from(new Set(nights.map(n => n.date.slice(0,7)))).sort();
+    const byDate = Object.fromEntries(nights.map(n => [n.date, n]));
+    const myByMonth = Object.fromEntries(months.map(m => [m, nights.filter(n => n.owner===pid && n.date.slice(0,7)===m).length]));
+    const storedMonth = localStorage.getItem('physNightMonth') || '';
+    const activeMonth = months.includes(storedMonth) ? storedMonth : (months[0] || '');
+    const activeIndex = Math.max(0, months.indexOf(activeMonth));
+    const monthKey = months[activeIndex];
+
+    return `<div class="stack">
+      <div class="card">
+        <div class="section-title"><h2>My Call Count by Month</h2>${badge(selectedArchive ? archivePeriodLabel(selectedArchive) : 'Read only')}</div>
+        <div class="selector-grid">
+          ${months.map(m => `<div class="card stat-card ${m===monthKey ? 'current-item' : ''}"><h3>${safe(monthLabel(m))}</h3><div class="stat-value">${myByMonth[m] || 0}</div><div class="stat-sub">Total calls</div></div>`).join('')}
+        </div>
+      </div>
+      <div class="card">
+        <div class="section-title"><h2>Night Call Calendar</h2>${badge('Read only')}</div>
+        <div class="night-month-nav">
+          <button class="btn ghost" id="nightPrevMonthBtn" ${activeIndex <= 0 ? 'disabled' : ''}>Previous Month</button>
+          <div class="month-label">${safe(monthLabel(monthKey))}</div>
+          <button class="btn ghost" id="nightNextMonthBtn" ${activeIndex >= months.length - 1 ? 'disabled' : ''}>Next Month</button>
+        </div>
+        <div class="calendar-months">
+          <div class="month-card physician-night-export-month" data-export-month="${monthKey}">
+            <div class="month-header">${safe(monthLabel(monthKey))}</div>
+            <div class="month-grid">
+              ${['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(d => `<div class="day-head">${d}</div>`).join('')}
+              ${(() => {
+                const [y,m] = monthKey.split('-').map(Number);
+                const first = new Date(y, m-1, 1);
+                const startDow = first.getDay();
+                const daysInMonth = new Date(y, m, 0).getDate();
+                let html = '';
+                for(let i=0;i<startDow;i++) html += `<div class="day-cell muted"></div>`;
+                for(let day=1; day<=daysInMonth; day++){
+                  const dateStr = `${monthKey}-${String(day).padStart(2,'0')}`;
+                  const entry = byDate[dateStr];
+                  const weekend = entry?.weekend;
+                  const mine = entry?.owner === pid;
+                  const cls = ['day-cell', weekend ? 'weekend' : '', mine ? 'mine' : '', dateStr === todayIso() ? 'today' : ''].join(' ').trim();
+                  const label = entry ? chipForOwner(state, entry.owner, weekend ? 'weekend' : '') : '<span class="small">—</span>';
+                  html += `<div class="${cls}"><span class="day-num">${day}</span>${label}<span class="day-note">${entry ? (weekend ? 'Weekend call' : 'Night call') : ''}</span></div>`;
+                }
+                return html;
+              })()}
+            </div>
+          </div>
+        </div>
+        <div style="margin-top:12px;display:flex;gap:10px">
+          <button class="btn" id="physExportNightExcel">Export Night Call (Excel)</button>
+          <button class="btn" id="physExportNightPDF">Export Night Call (PDF)</button>
+        </div>
+      </div>
+    </div>`;
   }
   function renderPhysicianHistory(state,pid){
     const mine = (state.requests||[]).filter(r => r.personId===pid).sort((a,b)=>b.startDate.localeCompare(a.startDate));
-    return `<div class="card"><div class="section-title"><h2>Request History</h2></div><div class="list">${mine.length ? mine.map(r => `<div class="list-item"><strong>${safe(requestLabel(r.type))}</strong><div class="small">${safe(r.startDate)} to ${safe(r.endDate)}</div><div style="margin-top:6px">${badge(r.status || 'pending', r.status==='approved'?'good':r.status==='denied'?'bad':'warn')}</div></div>`).join('') : '<div class="list-item">No requests submitted yet.</div>'}</div></div>`;
+    return `<div class="card"><div class="section-title"><h2>Request History</h2></div><div class="list">${mine.length ? mine.map(r => `<div class="list-item"><strong>${safe(requestLabel(r.type))}</strong><div class="small">${safe(r.startDate)} to ${safe(r.endDate)}</div><div style="margin-top:6px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">${badge(r.status || 'approved', r.status==='approved'?'good':r.status==='denied'?'bad':'warn')}<button class="btn warn" data-cancel-request="${r.id}">Cancel Request</button></div></div>`).join('') : '<div class="list-item">No requests submitted yet.</div>'}</div></div>`;
   }
   function renderPhysicianInspector(state,pid){
     const p = physicianMap(state)[pid];
     return `<div class="detail-box"><strong>${safe(p.name)}</strong><div class="small">Eligible services: ${(p.services||[]).join(', ')}</div></div>`;
   }
   function renderPhysicianRequestForm(state,pid){
-    return `<div class="card"><div class="section-title"><h2>Submit Request</h2></div><div class="selector-grid"><div><label class="small">Request Type</label><select id="physReqType" class="field" style="width:100%">${allRequestTypes().map(t=>`<option value="${t}">${requestLabel(t)}</option>`).join('')}</select></div><div><label class="small">Start Date</label><input id="physReqStart" class="field" type="date" style="width:100%"></div><div><label class="small">End Date</label><input id="physReqEnd" class="field" type="date" style="width:100%"></div></div><div style="margin-top:14px"><div class="section-title"><h2>Date Strip</h2><button class="btn" id="clearPhysRange">Clear Range</button></div><div id="physDateStrip"></div></div><div class="inline-actions" style="margin-top:14px"><button class="btn primary" id="savePhysReq">Save Request</button></div></div>`;
+    const start = state.settings.scheduleStart || window.SchedulerEngine.iso(new Date());
+    const end = state.settings.scheduleEnd || window.SchedulerEngine.iso(window.SchedulerEngine.addDays(window.SchedulerEngine.parseDate(start), 90));
+    const months = monthKeysBetween(start, end);
+    const currentMonth = localStorage.getItem('physReqMonth') || months[0];
+    return `<div class="card">
+      <div class="section-title"><h2>Submit Request</h2></div>
+      <div class="selector-grid physician-request-top">
+        <div>
+          <label class="small">Request Type</label>
+          <select id="physReqType" class="field" style="width:100%">${allRequestTypes().map(t=>`<option value="${t}">${requestLabel(t)}</option>`).join('')}</select>
+        </div>
+        <div class="inline-date-fields">
+          <div>
+            <label class="small">Selected Start</label>
+            <input id="physReqStart" class="field" type="date" style="width:100%" readonly>
+          </div>
+          <div>
+            <label class="small">Selected End</label>
+            <input id="physReqEnd" class="field" type="date" style="width:100%" readonly>
+          </div>
+        </div>
+      </div>
+      <div style="margin-top:14px">
+        <div class="section-title">
+          <h2>Choose Dates</h2>
+          <div class="inline-actions">
+            <button class="btn" id="physPrevMonth">← Prev</button>
+            <div class="detail-chip">${safe(monthLabel(currentMonth))}</div>
+            <button class="btn" id="physNextMonth">Next →</button>
+            <button class="btn" id="clearPhysRange">Clear Range</button>
+          </div>
+        </div>
+        <div class="detail-box">Click a start date, then click an end date. The selected request range will highlight across the calendar.</div>
+        <div id="physMonthCalendar" class="calendar-months single-month" style="margin-top:14px">
+          ${renderMonthCalendar(currentMonth, (dateStr, day) => {
+            const dt = new Date(dateStr+'T12:00:00');
+            const weekend = [0,6].includes(dt.getDay());
+            return `<button type="button" class="day-cell clickable ${weekend ? 'weekend-muted' : ''}" data-phys-date="${dateStr}"><span class="day-num">${day}</span></button>`;
+          })}
+        </div>
+      </div>
+      <div class="inline-actions physician-save-row" style="margin-top:14px"><button class="btn primary" id="savePhysReq">Save Request</button></div>
+    </div>`;
   }
   function bindPhysicianRequestForm(pid){
     const state = S();
-    const startBase = state.settings.scheduleStart || window.SchedulerEngine.iso(new Date());
-    const dates = dateRangeStrings(startBase, window.SchedulerEngine.iso(window.SchedulerEngine.addDays(window.SchedulerEngine.parseDate(startBase), 55)));
+    const start = state.settings.scheduleStart || window.SchedulerEngine.iso(new Date());
+    const end = state.settings.scheduleEnd || window.SchedulerEngine.iso(window.SchedulerEngine.addDays(window.SchedulerEngine.parseDate(start), 90));
+    const months = monthKeysBetween(start, end);
     const selection = {start:'', end:'', range:[]};
-    window.updatePhysDateFields = function(){ el('#physReqStart').value = selection.start || ''; el('#physReqEnd').value = selection.end || selection.start || ''; };
-    const container = el('#physDateStrip'); container.dataset.onchange='updatePhysDateFields';
-    renderDateStrip(container, dates, selection, 'range');
-    el('#clearPhysRange').onclick = () => { selection.start=''; selection.end=''; selection.range=[]; renderDateStrip(container, dates, selection, 'range'); updatePhysDateFields(); };
-    el('#savePhysReq').onclick = () => {
-      const start = el('#physReqStart').value; const end = el('#physReqEnd').value || start;
-      if(!start || !end) return alert('Choose a start and end date.');
-      window.AppState.upsertRequest({ id:`req-${Date.now()}`, personId:pid, type:el('#physReqType').value, startDate:start, endDate:end, status:'approved', createdAt:new Date().toISOString() });
-      alert('Request saved.'); renderPhysician(); const tab=el('.side-nav button[data-tab="history"]'); if(tab) tab.click();
+
+    function applyVisuals(){
+      els('[data-phys-date]').forEach(btn => {
+        const d = btn.dataset.physDate;
+        btn.classList.remove('single-selected','range-selected');
+        if(selection.start === d && (!selection.end || selection.end === selection.start)){
+          btn.classList.add('single-selected');
+        }
+        if(selection.range.includes(d)){
+          btn.classList.add('range-selected');
+        }
+      });
+      el('#physReqStart').value = selection.start || '';
+      el('#physReqEnd').value = selection.end || selection.start || '';
+    }
+
+    els('[data-phys-date]').forEach(btn => btn.onclick = () => {
+      const d = btn.dataset.physDate;
+      if(!selection.start || (selection.start && selection.end)){
+        selection.start = d;
+        selection.end = '';
+        selection.range = [d];
+      } else {
+        if(d < selection.start){
+          selection.end = selection.start;
+          selection.start = d;
+        } else {
+          selection.end = d;
+        }
+        selection.range = dateRangeStrings(selection.start, selection.end);
+      }
+      applyVisuals();
+    });
+
+    const currentMonth = localStorage.getItem('physReqMonth') || months[0];
+    const idx = months.indexOf(currentMonth);
+
+    el('#physPrevMonth').onclick = () => {
+      const nextIdx = Math.max(0, idx - 1);
+      localStorage.setItem('physReqMonth', months[nextIdx]);
+      localStorage.setItem('physActiveTab', 'request');
+      renderPhysician();
     };
+    el('#physNextMonth').onclick = () => {
+      const nextIdx = Math.min(months.length - 1, idx + 1);
+      localStorage.setItem('physReqMonth', months[nextIdx]);
+      localStorage.setItem('physActiveTab', 'request');
+      renderPhysician();
+    };
+
+    el('#clearPhysRange').onclick = () => {
+      selection.start = '';
+      selection.end = '';
+      selection.range = [];
+      applyVisuals();
+    };
+
+    el('#savePhysReq').onclick = () => {
+      const startDate = el('#physReqStart').value;
+      const endDate = el('#physReqEnd').value || startDate;
+      if(!startDate || !endDate) return alert('Choose a start and end date.');
+      window.AppState.upsertRequest({
+        id:`req-${Date.now()}`,
+        personId:pid,
+        type:el('#physReqType').value,
+        startDate:startDate,
+        endDate:endDate,
+        status:'approved',
+        createdAt:new Date().toISOString()
+      });
+      alert('Request saved.');
+      localStorage.setItem('physActiveTab', 'request');
+      renderPhysician();
+    };
+
+    applyVisuals();
   }
-<!-- redeploy -->
+
   function renderLocum(){
     const state = S();
     const currentId = localStorage.getItem('schedLocumSelected') || state.locums[0].id;
@@ -2711,106 +2637,22 @@ function renderOverrides(state){
     document.body.innerHTML = `<div class="mobile-shell"><div class="brand">Department Scheduling</div><p class="subtitle">Read only mobile snapshot</p><div class="card-grid-2"><div class="card"><div class="section-title"><h2>Upcoming Weekends</h2></div><div class="list">${(publishedWeeks||[]).slice(0,6).map(w => `<div class="list-item"><strong>${safe(w.weekendStart)}</strong><div>${chipForOwner(state,w.weekendOwner,'weekend')}</div></div>`).join('') || '<div class="list-item">No schedule loaded.</div>'}</div></div><div class="card"><div class="section-title"><h2>Upcoming Night Calls</h2></div><div class="list">${(publishedNights||[]).filter(n=>!n.weekend).slice(0,10).map(n => `<div class="list-item"><strong>${safe(n.date)}</strong><div>${chipForOwner(state,n.owner)}</div></div>`).join('') || '<div class="list-item">No nights loaded.</div>'}</div></div></div><div class="card" style="margin-top:14px"><div class="section-title"><h2>Master Schedule Snapshot</h2></div>${renderMasterSchedule({ ...state, draftWeeks: publishedWeeks })}</div></div>`;
   }
 
-  document.addEventListener('DOMContentLoaded', () => {
+  document.addEventListener('DOMContentLoaded', async () => {
     try{
+      await window.SchedulerCloud?.hydrateLocalState?.('schedulerRebuildStateV13');
       if(PAGE==='index') renderIndex();
       else if(PAGE==='admin') renderAdmin();
       else if(PAGE==='physician') renderPhysician();
       else if(PAGE==='locum') renderLocum();
       else if(PAGE==='mobile') renderMobile();
       else renderIndex();
+      window.SchedulerCloud?.startPolling?.('schedulerRebuildStateV13', () => location.reload());
     }catch(err){
       console.error(err);
       document.body.innerHTML = `<div class="home-shell"><div class="brand">Department Scheduling</div><p class="subtitle">The page failed to render.</p><pre class="card">${safe(err.stack || String(err))}</pre></div>`;
     }
   });
 })();
-
-function tableToCSV(table){
-  const rows=[...table.querySelectorAll("tr")];
-  return rows.map(r=>[...r.children].map(c=>'"'+c.innerText.replace(/"/g,'""')+'"').join(",")).join("\n");
-}
-
-function downloadCSV(csv,name){
-  const blob=new Blob([csv],{type:"text/csv"});
-  const url=URL.createObjectURL(blob);
-  const a=document.createElement("a");
-  a.href=url;a.download=name;a.click();
-  URL.revokeObjectURL(url);
-}
-
-function exportMasterExcel(){
-  const table=document.querySelector(".fit-master table");
-  if(!table) return alert("No master schedule found");
-  downloadCSV(tableToCSV(table),"master_schedule.csv");
-}
-
-function exportNightExcel(){
-  const state = window.AppState && window.AppState.loadState ? window.AppState.loadState() : null;
-  const nights = (state && state.draftNightManual) ? state.draftNightManual : [];
-  if(!nights.length) return alert("No night call calendar found");
-  const people = Object.fromEntries([...(state?.physicians || []), ...(state?.locums || [])].map(p => [p.id, p.name || p.id]));
-  const rows = [["Date","Owner","Type"]].concat(
-    nights.map(n => [
-      n.date || "",
-      people[n.owner] || n.owner || "",
-      n.weekend ? "Weekend call" : "Weekday night call"
-    ])
-  );
-  const csv = rows.map(r => r.map(v => '"' + String(v).replace(/"/g,'""') + '"').join(",")).join("\n");
-  downloadCSV(csv, "night_call.csv");
-}
-
-function exportMasterPDF(){
-  const wrap = document.querySelector('.fit-master');
-  const table = wrap ? wrap.querySelector('table') : null;
-  if(!table){
-    alert("Master schedule not found");
-    return;
-  }
-
-  const html = table.outerHTML;
-  const win = window.open('', '_blank');
-  win.document.write(`
-    <html>
-      <head>
-        <title>Master Schedule</title>
-        <style>
-          @page { size: landscape; margin: 10mm; }
-          body { font-family: Arial, Helvetica, sans-serif; margin: 0; color: #111; }
-          .print-wrap { width: 100%; }
-          table { width: 100%; border-collapse: collapse; table-layout: fixed; }
-          th, td { border: 1px solid #d6d6d6; padding: 6px 4px; font-size: 11px; text-align: center; vertical-align: top; }
-          th.service-col, td.week-row-label { width: 110px; text-align: left; }
-          .small { font-size: 10px; color: #666; }
-          .service-header { font-weight: 700; }
-          .chip, .day-owner {
-            display: inline-block;
-            padding: 2px 6px;
-            border-radius: 999px;
-            font-size: 10px;
-            line-height: 1.2;
-            white-space: nowrap;
-            border: 1px solid #d9d9d9;
-            background: #f7f7f7;
-            color: #111;
-          }
-          .service-cell.mine, .my-week-row td { background: #fafafa; }
-          .service-ICU, .service-GIM, .service-CAR1, .service-CAR2, .service-Resp, .service-Nephro,
-          .service-OP1, .service-OP2, .service-OP3, .service-Echo, .service-Weekend { background: transparent; }
-          .lock-toggle, .btn, button { display: none !important; }
-        </style>
-      </head>
-      <body>
-        <div class="print-wrap">${html}</div>
-      </body>
-    </html>
-  `);
-  win.document.close();
-  win.focus();
-  win.print();
-}
-
 </script>
 </body>
 </html>
