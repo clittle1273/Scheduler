@@ -4,34 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Admin Dashboard</title>
-  <style>
-
-/* Exact fix: fairness header service cells only */
-.fairness-tight th.service-ICU,
-.fairness-tight th.service-GIM,
-.fairness-tight th.service-CAR1,
-.fairness-tight th.service-CAR2,
-.fairness-tight th.service-OP1,
-.fairness-tight th.service-OP2,
-.fairness-tight th.service-OP3,
-.fairness-tight th.service-Resp,
-.fairness-tight th.service-Nephro,
-.fairness-tight th.service-Echo,
-.fairness-tight th.service-Weekend{
-  color:#ffffff !important;
-}
-
-
-
-
-
-
-
-
-
-
-
-:root{
+  <style>:root{
   --bg:#f4f6f8;
   --panel:#ffffff;
   --soft:#eef2f5;
@@ -48,22 +21,22 @@
   --radius:14px;
 }
 *{box-sizing:border-box}
-html,body{margin:0;padding:0;height:100%;overflow:hidden;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;color:var(--text);background:var(--bg)}
+html,body{margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;color:var(--text);background:var(--bg)}
 a{color:var(--accent-2);text-decoration:none}
 button,input,select,textarea{font:inherit}
 button{cursor:pointer}
 .hidden{display:none!important}
-.page-shell{display:grid;grid-template-columns:240px minmax(0,1fr);height:100vh;gap:16px;padding:16px;overflow:hidden}
+.page-shell{display:grid;grid-template-columns:240px minmax(0,1fr);min-height:100vh;gap:16px;padding:16px}
 .sidebar,.main-panel,.inspector,.home-shell,.mobile-shell{background:var(--panel);border:1px solid var(--line);box-shadow:var(--shadow);border-radius:18px}
-.sidebar{padding:16px;position:sticky;top:16px;height:calc(100vh - 32px);overflow:auto;min-height:0}
+.sidebar{padding:16px;position:sticky;top:16px;height:calc(100vh - 32px);overflow:auto}
 .brand{font-size:21px;font-weight:700;margin-bottom:6px}
 .brand-sub{color:var(--muted);font-size:13px;margin-bottom:18px}
 .side-nav{display:flex;flex-direction:column;gap:6px}
 .side-nav button{background:transparent;border:1px solid transparent;border-radius:10px;padding:11px 12px;text-align:left;color:var(--text)}
 .side-nav button.active,.side-nav button:hover{background:#eef4fb;border-color:#cfe0f4;color:var(--accent-2)}
 .side-footer{margin-top:18px;padding-top:14px;border-top:1px solid var(--line);color:var(--muted);font-size:12px}
-.main-panel{padding:18px;overflow:auto;min-height:0}
-.inspector{padding:18px;position:sticky;top:16px;height:calc(100vh - 32px);overflow:auto;min-height:0}
+.main-panel{padding:18px;overflow:auto}
+.inspector{padding:18px;position:sticky;top:16px;height:calc(100vh - 32px);overflow:auto}
 .topbar{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;margin-bottom:16px;flex-wrap:wrap}
 .title-block h1{margin:0 0 6px;font-size:28px}
 .subtitle{margin:0;color:var(--muted)}
@@ -261,9 +234,6 @@ thead .service-Weekend{background:var(--svc-weekend)!important}
   .summary-grid{grid-template-columns:repeat(2,minmax(140px,1fr))}
   .top-inputs{display:grid;grid-template-columns:1fr 1fr;align-items:end}
 }
-
-.night-month-nav{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px}
-.night-month-nav .month-label{font-weight:700}
 </style>
 </head>
 <body data-page="admin">
@@ -291,13 +261,9 @@ function exportNightExcel(){
   const state = window.AppState && window.AppState.loadState ? window.AppState.loadState() : null;
   const nights = (state && state.draftNightManual) ? state.draftNightManual : [];
   if(!nights.length) return alert("No night call calendar found");
-  const months = Array.from(new Set(nights.map(n => n.date.slice(0,7)))).sort();
-  const storedMonth = localStorage.getItem('adminNightMonth') || '';
-  const activeMonth = months.includes(storedMonth) ? storedMonth : (months[0] || '');
-  const visible = nights.filter(n => n.date.startsWith(activeMonth));
   const people = Object.fromEntries([...(state?.physicians || []), ...(state?.locums || [])].map(p => [p.id, p.name || p.id]));
   const rows = [["Date","Owner","Type"]].concat(
-    visible.map(n => [
+    nights.map(n => [
       n.date || "",
       people[n.owner] || n.owner || "",
       n.weekend ? "Weekend call" : "Weekday night call"
@@ -305,52 +271,6 @@ function exportNightExcel(){
   );
   const csv = rows.map(r => r.map(v => '"' + String(v).replace(/"/g,'""') + '"').join(",")).join("\n");
   downloadCSV(csv, "night_call.csv");
-}
-
-function exportNightPDF(){
-  const monthCard = document.querySelector('.admin-night-export-month');
-  if(!monthCard){
-    alert("Night call calendar not found");
-    return;
-  }
-  const state = window.AppState && window.AppState.loadState ? window.AppState.loadState() : null;
-  const range = state?.settings?.scheduleStart && state?.settings?.scheduleEnd ? `${state.settings.scheduleStart} to ${state.settings.scheduleEnd}` : '';
-  const generated = new Date().toLocaleDateString();
-  const html = monthCard.outerHTML;
-  const win = window.open('', '_blank');
-  win.document.write(`
-    <html>
-      <head>
-        <title>Night Call Calendar</title>
-        <style>
-          body { font-family: Arial, Helvetica, sans-serif; margin: 16px; color: #111; }
-          .print-header{padding:0 0 12px 0;margin-bottom:12px;border-bottom:2px solid #d9e0e6}
-          .print-header h1{margin:0 0 4px 0;font-size:22px}
-          .print-header .sub{font-size:12px;color:#555}
-          .calendar-month { margin-bottom: 18px; break-inside: avoid; page-break-inside: avoid; }
-          .month-title { font-size: 18px; font-weight: 700; margin: 0 0 8px 0; }
-          .month-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
-          .day-head { font-size: 12px; font-weight: 700; text-align: center; padding: 4px 0; color:#666; }
-          .day-cell { min-height: 78px; border: 1px solid #cfcfcf; border-radius: 6px; padding: 6px; box-sizing: border-box; background:#fff; }
-          .day-num { font-size: 12px; font-weight: 700; margin-bottom: 4px; }
-          .day-owner { font-size: 12px; line-height: 1.25; display: inline-block; }
-          .weekend { background: #f6f6f6; }
-          .inline-cell-editor, .btn, button { display: none !important; }
-          @media print { body { margin: 10mm; } }
-        </style>
-      </head>
-      <body>
-        <div class="print-header">
-          <h1>Penticton GIM Night Call</h1>
-          <div class="sub">${range ? `Schedule Range: ${range} · ` : ''}Generated ${generated}</div>
-        </div>
-        ${html}
-      </body>
-    </html>
-  `);
-  win.document.close();
-  win.focus();
-  win.print();
 }
 
 function exportMasterPDF(){
@@ -361,10 +281,7 @@ function exportMasterPDF(){
     return;
   }
   const state = window.AppState && window.AppState.loadState ? window.AppState.loadState() : null;
-  const archive = (typeof getPhysicianSelectedArchiveState === 'function') ? getPhysicianSelectedArchiveState().archive : null;
-  const range = archive?.start && archive?.end
-    ? `${archive.start} to ${archive.end}`
-    : (state?.settings?.scheduleStart && state?.settings?.scheduleEnd ? `${state.settings.scheduleStart} to ${state.settings.scheduleEnd}` : '');
+  const range = state?.settings?.scheduleStart && state?.settings?.scheduleEnd ? `${state.settings.scheduleStart} to ${state.settings.scheduleEnd}` : '';
   const generated = new Date().toLocaleDateString();
   const html = table.outerHTML;
   const win = window.open('', '_blank');
@@ -374,39 +291,29 @@ function exportMasterPDF(){
         <title>Department Schedule PDF</title>
         <style>
           @page { size: landscape; margin: 10mm; }
-          body { font-family: Arial, Helvetica, sans-serif; margin: 0; color: #111; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+          body { font-family: Arial, Helvetica, sans-serif; margin: 0; color: #111; }
           .print-header{padding:0 0 12px 0;margin-bottom:12px;border-bottom:2px solid #d9e0e6}
           .print-header h1{margin:0 0 4px 0;font-size:22px}
           .print-header .sub{font-size:12px;color:#555}
           .print-wrap { width: 100%; }
           table { width: 100%; border-collapse: collapse; table-layout: fixed; }
           th, td { border: 1px solid #d6d6d6; padding: 6px 4px; font-size: 11px; text-align: center; vertical-align: top; }
-          th.service-col, td.week-row-label { width: 110px; text-align: left; background:#fff; }
+          th.service-col, td.week-row-label { width: 110px; text-align: left; }
           .small { font-size: 10px; color: #666; }
-          .service-header { font-weight: 700; color:#fff !important; }
+          .service-header { font-weight: 700; color:#fff; }
           .assign-chip { display:inline-block; padding:2px 6px; border-radius:999px; font-size:10px; line-height:1.2; white-space:nowrap; border:1px solid #d9d9d9; background:#f7f7f7; color:#111; }
           .assign-chip.weekend{background:#eef1f4}
           .assign-chip.locum{background:#f5f3ff}
-          thead .service-ICU{background:#8f2020 !important;color:#fff !important}
-          thead .service-GIM{background:#163f73 !important;color:#fff !important}
-          thead .service-CAR1{background:#1f7a45 !important;color:#fff !important}
-          thead .service-CAR2{background:#1c6b74 !important;color:#fff !important}
-          thead .service-Resp{background:#6d3da8 !important;color:#fff !important}
-          thead .service-Nephro{background:#7a4b1f !important;color:#fff !important}
-          thead .service-OP1, thead .service-OP2, thead .service-OP3{background:#2f6fad !important;color:#fff !important}
-          thead .service-Echo{background:#c76b17 !important;color:#fff !important}
-          thead .service-Weekend{background:#5b6472 !important;color:#fff !important}
-          tbody td.service-ICU{background:#f7e3e3 !important;border-left:4px solid #8f2020 !important}
-          tbody td.service-GIM{background:#e5eef8 !important;border-left:4px solid #163f73 !important}
-          tbody td.service-CAR1{background:#e4f2ea !important;border-left:4px solid #1f7a45 !important}
-          tbody td.service-CAR2{background:#e3eef0 !important;border-left:4px solid #1c6b74 !important}
-          tbody td.service-Resp{background:#eee7f8 !important;border-left:4px solid #6d3da8 !important}
-          tbody td.service-Nephro{background:#f3e9df !important;border-left:4px solid #7a4b1f !important}
-          tbody td.service-OP1, tbody td.service-OP2, tbody td.service-OP3{background:#e7eef8 !important;border-left:4px solid #2f6fad !important}
-          tbody td.service-Echo{background:#f9ede0 !important;border-left:4px solid #c76b17 !important}
-          tbody td.service-Weekend{background:#eceef1 !important;border-left:4px solid #5b6472 !important}
-          tbody tr.current-week-row td{background:#fff7d6 !important}
-          .lock-toggle,.btn,button,.pin-toggle{display:none !important}
+          .service-ICU{background:#8f2020!important;color:#fff}
+          .service-GIM{background:#163f73!important;color:#fff}
+          .service-CAR1{background:#1f7a45!important;color:#fff}
+          .service-CAR2{background:#1c6b74!important;color:#fff}
+          .service-Resp{background:#6d3da8!important;color:#fff}
+          .service-Nephro{background:#7a4b1f!important;color:#fff}
+          .service-OP1,.service-OP2,.service-OP3{background:#2f6fad!important;color:#fff}
+          .service-Echo{background:#c76b17!important;color:#fff}
+          .service-Weekend{background:#5b6472!important;color:#fff}
+          .lock-toggle,.btn,button,.pin-toggle{display:none!important}
         </style>
       </head>
       <body>
@@ -1735,28 +1642,6 @@ function chipForOwner(state, ownerId, kind=''){
         main.innerHTML = renderNightCalendar(st);
         if(inspector) inspector.innerHTML = '';
         bindNightCalendar();
-        const months = Array.from(new Set(((st.draftNightManual || []).map(n => n.date.slice(0,7))))).sort();
-        const storedMonth = localStorage.getItem('adminNightMonth') || '';
-        const activeMonth = months.includes(storedMonth) ? storedMonth : (months[0] || '');
-        const activeIndex = Math.max(0, months.indexOf(activeMonth));
-        const prevBtn = el('#adminNightPrevMonthBtn');
-        const nextBtn = el('#adminNightNextMonthBtn');
-        const excelBtn = el('#adminExportNightExcel');
-        const pdfBtn = el('#adminExportNightPDF');
-        if(prevBtn) prevBtn.onclick = () => {
-          if(activeIndex > 0){
-            localStorage.setItem('adminNightMonth', months[activeIndex - 1]);
-            redraw('night');
-          }
-        };
-        if(nextBtn) nextBtn.onclick = () => {
-          if(activeIndex < months.length - 1){
-            localStorage.setItem('adminNightMonth', months[activeIndex + 1]);
-            redraw('night');
-          }
-        };
-        if(excelBtn) excelBtn.onclick = exportNightExcel;
-        if(pdfBtn) pdfBtn.onclick = exportNightPDF;
       } else if(active.key === 'requests'){
         main.innerHTML = renderRequestsAdmin(st);
         if(inspector) inspector.innerHTML = '';
@@ -1951,24 +1836,13 @@ function chipForOwner(state, ownerId, kind=''){
   function renderNightCalendar(state){
     const nights = state.draftNightManual || [];
     if(!nights.length) return `<div class="card"><strong>No night call draft yet.</strong></div>`;
-    const months = Array.from(new Set(nights.map(n => n.date.slice(0,7)))).sort();
-    const storedMonth = localStorage.getItem('adminNightMonth') || '';
-    const activeMonth = months.includes(storedMonth) ? storedMonth : (months[0] || '');
-    const activeIndex = Math.max(0, months.indexOf(activeMonth));
-    const month = months[activeIndex];
+    const months = Array.from(new Set(nights.map(n => n.date.slice(0,7))));
     return `
 <div>
-<div class="night-month-nav">
-  <button class="btn ghost" id="adminNightPrevMonthBtn" ${activeIndex <= 0 ? 'disabled' : ''}>Previous Month</button>
-  <div class="month-label">${safe(monthLabel(month))}</div>
-  <button class="btn ghost" id="adminNightNextMonthBtn" ${activeIndex >= months.length - 1 ? 'disabled' : ''}>Next Month</button>
-</div>
-<div class="admin-night-export-month" data-export-month="${month}">
-  ${renderMonth(state, month, nights.filter(n => n.date.startsWith(month)))}
-</div>
+${months.map(month => renderMonth(state, month, nights.filter(n => n.date.startsWith(month)))).join('')}
 <div style="margin-top:12px;display:flex;gap:10px">
-<button class="btn" id="adminExportNightExcel">Export Night Call (Excel)</button>
-<button class="btn" id="adminExportNightPDF">Export Night Call (PDF)</button>
+<button class="btn" onclick="exportNightExcel()">Export Night Call (Excel)</button>
+<button class="btn" onclick="exportNightPDF()">Export Night Call (PDF)</button>
 </div>
 </div>`;
   }

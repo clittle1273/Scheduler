@@ -4,34 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Physician Portal</title>
-  <style>
-
-/* Exact fix: fairness header service cells only */
-.fairness-tight th.service-ICU,
-.fairness-tight th.service-GIM,
-.fairness-tight th.service-CAR1,
-.fairness-tight th.service-CAR2,
-.fairness-tight th.service-OP1,
-.fairness-tight th.service-OP2,
-.fairness-tight th.service-OP3,
-.fairness-tight th.service-Resp,
-.fairness-tight th.service-Nephro,
-.fairness-tight th.service-Echo,
-.fairness-tight th.service-Weekend{
-  color:#ffffff !important;
-}
-
-
-
-
-
-
-
-
-
-
-
-:root{
+  <style>:root{
   --bg:#f4f6f8;
   --panel:#ffffff;
   --soft:#eef2f5;
@@ -2048,73 +2021,583 @@ function chipForOwner(state, ownerId, kind=''){
   }
 
   function exportMasterPDF(){
-  const wrap = document.querySelector('.fit-master');
-  const table = wrap ? wrap.querySelector('table') : null;
-  if(!table){
-    alert("Master schedule not found");
-    return;
+    const wrap = document.querySelector('.fit-master');
+    const table = wrap ? wrap.querySelector('table') : null;
+    if(!table){
+      alert("Master schedule not found");
+      return;
+    }
+    const payload = getPhysicianSelectedArchiveState();
+    const archive = payload.archive;
+    const range = archive?.start && archive?.end ? `${archive.start} to ${archive.end}` : '';
+    const generated = new Date().toLocaleDateString();
+    const html = table.outerHTML;
+    const win = window.open('', '_blank');
+    win.document.write(`
+      <html>
+        <head>
+          <title>Department Schedule PDF</title>
+          <style>
+            @page { size: landscape; margin: 10mm; }
+            body { font-family: Arial, Helvetica, sans-serif; margin: 0; color: #111; }
+            .print-header{padding:0 0 12px 0;margin-bottom:12px;border-bottom:2px solid #d9e0e6}
+            .print-header h1{margin:0 0 4px 0;font-size:22px}
+            .print-header .sub{font-size:12px;color:#555}
+            .print-wrap { width: 100%; }
+            table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+            th, td { border: 1px solid #d6d6d6; padding: 6px 4px; font-size: 11px; text-align: center; vertical-align: top; }
+            th.service-col, td.week-row-label { width: 110px; text-align: left; }
+            .small { font-size: 10px; color: #666; }
+            .service-header { font-weight: 700; color:#fff; }
+            .assign-chip { display:inline-block; padding:2px 6px; border-radius:999px; font-size:10px; line-height:1.2; white-space:nowrap; border:1px solid #d9d9d9; background:#f7f7f7; color:#111; }
+            .assign-chip.weekend{background:#eef1f4}
+            .assign-chip.locum{background:#f5f3ff}
+            .service-ICU{background:#8f2020!important;color:#fff}
+            .service-GIM{background:#163f73!important;color:#fff}
+            .service-CAR1{background:#1f7a45!important;color:#fff}
+            .service-CAR2{background:#1c6b74!important;color:#fff}
+            .service-Resp{background:#6d3da8!important;color:#fff}
+            .service-Nephro{background:#7a4b1f!important;color:#fff}
+            .service-OP1,.service-OP2,.service-OP3{background:#2f6fad!important;color:#fff}
+            .service-Echo{background:#c76b17!important;color:#fff}
+            .service-Weekend{background:#5b6472!important;color:#fff}
+            .lock-toggle,.btn,button,.pin-toggle{display:none!important}
+          </style>
+        </head>
+        <body>
+          <div class="print-header">
+            <h1>Penticton GIM Schedule</h1>
+            <div class="sub">${range ? `Schedule Range: ${range} · ` : ''}Generated ${generated}</div>
+          </div>
+          <div class="print-wrap">${html}</div>
+        </body>
+      </html>
+    `);
+    win.document.close();
+    win.focus();
+    win.print();
   }
-  const state = window.AppState && window.AppState.loadState ? window.AppState.loadState() : null;
-  const archive = (typeof getPhysicianSelectedArchiveState === 'function') ? getPhysicianSelectedArchiveState().archive : null;
-  const range = archive?.start && archive?.end
-    ? `${archive.start} to ${archive.end}`
-    : (state?.settings?.scheduleStart && state?.settings?.scheduleEnd ? `${state.settings.scheduleStart} to ${state.settings.scheduleEnd}` : '');
-  const generated = new Date().toLocaleDateString();
-  const html = table.outerHTML;
-  const win = window.open('', '_blank');
-  win.document.write(`
-    <html>
-      <head>
-        <title>Department Schedule PDF</title>
-        <style>
-          @page { size: landscape; margin: 10mm; }
-          body { font-family: Arial, Helvetica, sans-serif; margin: 0; color: #111; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-          .print-header{padding:0 0 12px 0;margin-bottom:12px;border-bottom:2px solid #d9e0e6}
-          .print-header h1{margin:0 0 4px 0;font-size:22px}
-          .print-header .sub{font-size:12px;color:#555}
-          .print-wrap { width: 100%; }
-          table { width: 100%; border-collapse: collapse; table-layout: fixed; }
-          th, td { border: 1px solid #d6d6d6; padding: 6px 4px; font-size: 11px; text-align: center; vertical-align: top; }
-          th.service-col, td.week-row-label { width: 110px; text-align: left; background:#fff; }
-          .small { font-size: 10px; color: #666; }
-          .service-header { font-weight: 700; color:#fff !important; }
-          .assign-chip { display:inline-block; padding:2px 6px; border-radius:999px; font-size:10px; line-height:1.2; white-space:nowrap; border:1px solid #d9d9d9; background:#f7f7f7; color:#111; }
-          .assign-chip.weekend{background:#eef1f4}
-          .assign-chip.locum{background:#f5f3ff}
-          thead .service-ICU{background:#8f2020 !important;color:#fff !important}
-          thead .service-GIM{background:#163f73 !important;color:#fff !important}
-          thead .service-CAR1{background:#1f7a45 !important;color:#fff !important}
-          thead .service-CAR2{background:#1c6b74 !important;color:#fff !important}
-          thead .service-Resp{background:#6d3da8 !important;color:#fff !important}
-          thead .service-Nephro{background:#7a4b1f !important;color:#fff !important}
-          thead .service-OP1, thead .service-OP2, thead .service-OP3{background:#2f6fad !important;color:#fff !important}
-          thead .service-Echo{background:#c76b17 !important;color:#fff !important}
-          thead .service-Weekend{background:#5b6472 !important;color:#fff !important}
-          tbody td.service-ICU{background:#f7e3e3 !important;border-left:4px solid #8f2020 !important}
-          tbody td.service-GIM{background:#e5eef8 !important;border-left:4px solid #163f73 !important}
-          tbody td.service-CAR1{background:#e4f2ea !important;border-left:4px solid #1f7a45 !important}
-          tbody td.service-CAR2{background:#e3eef0 !important;border-left:4px solid #1c6b74 !important}
-          tbody td.service-Resp{background:#eee7f8 !important;border-left:4px solid #6d3da8 !important}
-          tbody td.service-Nephro{background:#f3e9df !important;border-left:4px solid #7a4b1f !important}
-          tbody td.service-OP1, tbody td.service-OP2, tbody td.service-OP3{background:#e7eef8 !important;border-left:4px solid #2f6fad !important}
-          tbody td.service-Echo{background:#f9ede0 !important;border-left:4px solid #c76b17 !important}
-          tbody td.service-Weekend{background:#eceef1 !important;border-left:4px solid #5b6472 !important}
-          tbody tr.current-week-row td{background:#fff7d6 !important}
-          .lock-toggle,.btn,button,.pin-toggle{display:none !important}
-        </style>
-      </head>
-      <body>
-        <div class="print-header">
-          <h1>Penticton GIM Schedule</h1>
-          <div class="sub">${range ? `Schedule Range: ${range} · ` : ''}Generated ${generated}</div>
+
+  function exportNightPDF(){
+    const monthCard = document.querySelector('.physician-night-export-month');
+    if(!monthCard){
+      alert("Night call calendar not found");
+      return;
+    }
+    const payload = getPhysicianSelectedArchiveState();
+    const archive = payload.archive;
+    const range = archive?.start && archive?.end ? `${archive.start} to ${archive.end}` : '';
+    const generated = new Date().toLocaleDateString();
+    const html = monthCard.outerHTML;
+    const win = window.open('', '_blank');
+    win.document.write(`
+      <html>
+        <head>
+          <title>Night Call Calendar</title>
+          <style>
+            body { font-family: Arial, Helvetica, sans-serif; margin: 16px; color: #111; }
+            .print-header{padding:0 0 12px 0;margin-bottom:12px;border-bottom:2px solid #d9e0e6}
+            .print-header h1{margin:0 0 4px 0;font-size:22px}
+            .print-header .sub{font-size:12px;color:#555}
+            .month-card { margin-bottom: 18px; break-inside: avoid; page-break-inside: avoid; border:1px solid #d9e0e6; border-radius:14px; padding:12px; }
+            .month-header { font-size: 18px; font-weight: 700; margin: 0 0 8px 0; }
+            .month-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
+            .day-head { font-size: 12px; font-weight: 700; text-align: center; padding: 4px 0; color:#666; }
+            .day-cell { min-height: 78px; border: 1px solid #cfcfcf; border-radius: 6px; padding: 6px; box-sizing: border-box; background:#fff; }
+            .day-num { font-size: 12px; font-weight: 700; margin-bottom: 4px; }
+            .assign-chip, .day-owner { display:inline-block; padding:2px 6px; border-radius:999px; font-size:10px; line-height:1.2; white-space:nowrap; border:1px solid #d9d9d9; background:#f7f7f7; color:#111; }
+            .weekend { background: #f6f6f6; }
+            .btn, button { display: none !important; }
+            @media print { body { margin: 10mm; } }
+          </style>
+        </head>
+        <body>
+          <div class="print-header">
+            <h1>Penticton GIM Night Call</h1>
+            <div class="sub">${range ? `Schedule Range: ${range} · ` : ''}Generated ${generated}</div>
+          </div>
+          ${html}
+        </body>
+      </html>
+    `);
+    win.document.close();
+    win.focus();
+    win.print();
+  }
+
+function renderPhysicianSchedule(state,pid){
+    const selectedArchive = selectedArchiveForYear(state, selectedPortalYear(state));
+    const baseWeeks = selectedArchive?.weeks || [];
+    if(!baseWeeks.length) return `<div class="card"><strong>No published schedule available for the selected year.</strong></div>`;
+    const cols = ['ICU','GIM','CAR1','CAR2','Resp','Nephro','OP1','OP2','OP3','Echo','Weekend'];
+    const myWeeksOnly = localStorage.getItem('physMyWeeksOnly') === '1';
+    const weeks = myWeeksOnly ? baseWeeks.filter(w => cols.some(service => ((service === 'Weekend' ? w.weekendOwner : w.services[service]) === pid))) : baseWeeks;
+    return `
+      <div class="card">
+        <div class="section-title"><h2>Published Schedule</h2>${badge(selectedArchive ? archivePeriodLabel(selectedArchive) : 'Read only')}</div>
+        <div class="table-wrap fit-master"><table>
+          <thead><tr><th class="service-col">Week</th>${cols.map(service => `<th class="service-header service-${service}">${safe(service)}</th>`).join('')}</tr></thead>
+          <tbody>
+            ${weeks.map(w => {
+              const myWeek = cols.some(service => ((service === 'Weekend' ? w.weekendOwner : w.services[service]) === pid));
+              const rowCls = `${myWeek ? 'my-week-row' : ''} ${isCurrentWeekRange(w.weekStart, w.weekendEnd) ? 'current-week-row' : ''}`.trim();
+              return `<tr class="${rowCls}">
+              <td class="week-row-label"><div>${safe(fmtDate(w.weekStart))}</div><div class="small">${safe(w.weekStart)}${isCurrentWeekRange(w.weekStart, w.weekendEnd) ? ' · Current week' : ''}</div></td>
+              ${cols.map(service => {
+                const owner = service === 'Weekend' ? w.weekendOwner : w.services[service];
+                const mine = owner === pid ? 'mine' : '';
+                return `<td class="service-cell service-${service} ${mine}">${chipForOwner(state, owner, service === 'Weekend' ? 'weekend' : '')}</td>`;
+              }).join('')}
+            </tr>`;
+            }).join('')}
+          </tbody>
+        </table>
+        <div style="margin-top:12px;display:flex;gap:10px">
+          <button class="btn" id="physExportMasterExcel">Export Master Schedule (Excel)</button>
+          <button class="btn" id="physExportMasterPDF">Export Master Schedule (PDF)</button>
+        </div></div>
+      </div>`;
+  }
+  function renderPhysicianCalls(state,pid){
+    const selectedArchive = selectedArchiveForYear(state, selectedPortalYear(state));
+    const nights = selectedArchive?.nightAssignments || [];
+    if(!nights.length) return `<div class="card"><strong>No night call schedule available for the selected year.</strong></div>`;
+    const months = Array.from(new Set(nights.map(n => n.date.slice(0,7)))).sort();
+    const byDate = Object.fromEntries(nights.map(n => [n.date, n]));
+    const myByMonth = Object.fromEntries(months.map(m => [m, nights.filter(n => n.owner===pid && n.date.slice(0,7)===m).length]));
+    const storedMonth = localStorage.getItem('physNightMonth') || '';
+    const activeMonth = months.includes(storedMonth) ? storedMonth : (months[0] || '');
+    const activeIndex = Math.max(0, months.indexOf(activeMonth));
+    const monthKey = months[activeIndex];
+
+    return `<div class="stack">
+      <div class="card">
+        <div class="section-title"><h2>My Call Count by Month</h2>${badge(selectedArchive ? archivePeriodLabel(selectedArchive) : 'Read only')}</div>
+        <div class="selector-grid">
+          ${months.map(m => `<div class="card stat-card ${m===monthKey ? 'current-item' : ''}"><h3>${safe(monthLabel(m))}</h3><div class="stat-value">${myByMonth[m] || 0}</div><div class="stat-sub">Total calls</div></div>`).join('')}
         </div>
-        <div class="print-wrap">${html}</div>
-      </body>
-    </html>
-  `);
-  win.document.close();
-  win.focus();
-  win.print();
+      </div>
+      <div class="card">
+        <div class="section-title"><h2>Night Call Calendar</h2>${badge('Read only')}</div>
+        <div class="night-month-nav">
+          <button class="btn ghost" id="nightPrevMonthBtn" ${activeIndex <= 0 ? 'disabled' : ''}>Previous Month</button>
+          <div class="month-label">${safe(monthLabel(monthKey))}</div>
+          <button class="btn ghost" id="nightNextMonthBtn" ${activeIndex >= months.length - 1 ? 'disabled' : ''}>Next Month</button>
+        </div>
+        <div class="calendar-months">
+          <div class="month-card physician-night-export-month" data-export-month="${monthKey}">
+            <div class="month-header">${safe(monthLabel(monthKey))}</div>
+            <div class="month-grid">
+              ${['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(d => `<div class="day-head">${d}</div>`).join('')}
+              ${(() => {
+                const [y,m] = monthKey.split('-').map(Number);
+                const first = new Date(y, m-1, 1);
+                const startDow = first.getDay();
+                const daysInMonth = new Date(y, m, 0).getDate();
+                let html = '';
+                for(let i=0;i<startDow;i++) html += `<div class="day-cell muted"></div>`;
+                for(let day=1; day<=daysInMonth; day++){
+                  const dateStr = `${monthKey}-${String(day).padStart(2,'0')}`;
+                  const entry = byDate[dateStr];
+                  const weekend = entry?.weekend;
+                  const mine = entry?.owner === pid;
+                  const cls = ['day-cell', weekend ? 'weekend' : '', mine ? 'mine' : '', dateStr === todayIso() ? 'today' : ''].join(' ').trim();
+                  const label = entry ? chipForOwner(state, entry.owner, weekend ? 'weekend' : '') : '<span class="small">—</span>';
+                  html += `<div class="${cls}"><span class="day-num">${day}</span>${label}<span class="day-note">${entry ? (weekend ? 'Weekend call' : 'Night call') : ''}</span></div>`;
+                }
+                return html;
+              })()}
+            </div>
+          </div>
+        </div>
+        <div style="margin-top:12px;display:flex;gap:10px">
+          <button class="btn" id="physExportNightExcel">Export Night Call (Excel)</button>
+          <button class="btn" id="physExportNightPDF">Export Night Call (PDF)</button>
+        </div>
+      </div>
+    </div>`;
+  }
+  function renderPhysicianHistory(state,pid){
+    const mine = (state.requests||[]).filter(r => r.personId===pid).sort((a,b)=>b.startDate.localeCompare(a.startDate));
+    return `<div class="card"><div class="section-title"><h2>Request History</h2></div><div class="list">${mine.length ? mine.map(r => `<div class="list-item"><strong>${safe(requestLabel(r.type))}</strong><div class="small">${safe(r.startDate)} to ${safe(r.endDate)}</div><div style="margin-top:6px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">${badge(r.status || 'approved', r.status==='approved'?'good':r.status==='denied'?'bad':'warn')}<button class="btn warn" data-cancel-request="${r.id}">Cancel Request</button></div></div>`).join('') : '<div class="list-item">No requests submitted yet.</div>'}</div></div>`;
+  }
+  function renderPhysicianInspector(state,pid){
+    const p = physicianMap(state)[pid];
+    return `<div class="detail-box"><strong>${safe(p.name)}</strong><div class="small">Eligible services: ${(p.services||[]).join(', ')}</div></div>`;
+  }
+  function renderPhysicianRequestForm(state,pid){
+    const start = state.settings.scheduleStart || window.SchedulerEngine.iso(new Date());
+    const end = state.settings.scheduleEnd || window.SchedulerEngine.iso(window.SchedulerEngine.addDays(window.SchedulerEngine.parseDate(start), 90));
+    const months = monthKeysBetween(start, end);
+    const currentMonth = localStorage.getItem('physReqMonth') || months[0];
+    return `<div class="card">
+      <div class="section-title"><h2>Submit Request</h2></div>
+      <div class="selector-grid physician-request-top">
+        <div>
+          <label class="small">Request Type</label>
+          <select id="physReqType" class="field" style="width:100%">${allRequestTypes().map(t=>`<option value="${t}">${requestLabel(t)}</option>`).join('')}</select>
+        </div>
+        <div class="inline-date-fields">
+          <div>
+            <label class="small">Selected Start</label>
+            <input id="physReqStart" class="field" type="date" style="width:100%" readonly>
+          </div>
+          <div>
+            <label class="small">Selected End</label>
+            <input id="physReqEnd" class="field" type="date" style="width:100%" readonly>
+          </div>
+        </div>
+      </div>
+      <div style="margin-top:14px">
+        <div class="section-title">
+          <h2>Choose Dates</h2>
+          <div class="inline-actions">
+            <button class="btn" id="physPrevMonth">← Prev</button>
+            <div class="detail-chip">${safe(monthLabel(currentMonth))}</div>
+            <button class="btn" id="physNextMonth">Next →</button>
+            <button class="btn" id="clearPhysRange">Clear Range</button>
+          </div>
+        </div>
+        <div class="detail-box">Click a start date, then click an end date. The selected request range will highlight across the calendar.</div>
+        <div id="physMonthCalendar" class="calendar-months single-month" style="margin-top:14px">
+          ${renderMonthCalendar(currentMonth, (dateStr, day) => {
+            const dt = new Date(dateStr+'T12:00:00');
+            const weekend = [0,6].includes(dt.getDay());
+            return `<button type="button" class="day-cell clickable ${weekend ? 'weekend-muted' : ''}" data-phys-date="${dateStr}"><span class="day-num">${day}</span></button>`;
+          })}
+        </div>
+      </div>
+      <div class="inline-actions physician-save-row" style="margin-top:14px"><button class="btn primary" id="savePhysReq">Save Request</button></div>
+    </div>`;
+  }
+  function bindPhysicianRequestForm(pid){
+    const state = S();
+    const start = state.settings.scheduleStart || window.SchedulerEngine.iso(new Date());
+    const end = state.settings.scheduleEnd || window.SchedulerEngine.iso(window.SchedulerEngine.addDays(window.SchedulerEngine.parseDate(start), 90));
+    const months = monthKeysBetween(start, end);
+    const selection = {start:'', end:'', range:[]};
+
+    function applyVisuals(){
+      els('[data-phys-date]').forEach(btn => {
+        const d = btn.dataset.physDate;
+        btn.classList.remove('single-selected','range-selected');
+        if(selection.start === d && (!selection.end || selection.end === selection.start)){
+          btn.classList.add('single-selected');
+        }
+        if(selection.range.includes(d)){
+          btn.classList.add('range-selected');
+        }
+      });
+      el('#physReqStart').value = selection.start || '';
+      el('#physReqEnd').value = selection.end || selection.start || '';
+    }
+
+    els('[data-phys-date]').forEach(btn => btn.onclick = () => {
+      const d = btn.dataset.physDate;
+      if(!selection.start || (selection.start && selection.end)){
+        selection.start = d;
+        selection.end = '';
+        selection.range = [d];
+      } else {
+        if(d < selection.start){
+          selection.end = selection.start;
+          selection.start = d;
+        } else {
+          selection.end = d;
+        }
+        selection.range = dateRangeStrings(selection.start, selection.end);
+      }
+      applyVisuals();
+    });
+
+    const currentMonth = localStorage.getItem('physReqMonth') || months[0];
+    const idx = months.indexOf(currentMonth);
+
+    el('#physPrevMonth').onclick = () => {
+      const nextIdx = Math.max(0, idx - 1);
+      localStorage.setItem('physReqMonth', months[nextIdx]);
+      localStorage.setItem('physActiveTab', 'request');
+      renderPhysician();
+    };
+    el('#physNextMonth').onclick = () => {
+      const nextIdx = Math.min(months.length - 1, idx + 1);
+      localStorage.setItem('physReqMonth', months[nextIdx]);
+      localStorage.setItem('physActiveTab', 'request');
+      renderPhysician();
+    };
+
+    el('#clearPhysRange').onclick = () => {
+      selection.start = '';
+      selection.end = '';
+      selection.range = [];
+      applyVisuals();
+    };
+
+    el('#savePhysReq').onclick = () => {
+      const startDate = el('#physReqStart').value;
+      const endDate = el('#physReqEnd').value || startDate;
+      if(!startDate || !endDate) return alert('Choose a start and end date.');
+      window.AppState.upsertRequest({
+        id:`req-${Date.now()}`,
+        personId:pid,
+        type:el('#physReqType').value,
+        startDate:startDate,
+        endDate:endDate,
+        status:'approved',
+        createdAt:new Date().toISOString()
+      });
+      alert('Request saved.');
+      localStorage.setItem('physActiveTab', 'request');
+      renderPhysician();
+    };
+
+    applyVisuals();
+  }
+
+  function renderLocum(){
+    const state = S();
+    const currentId = localStorage.getItem('schedLocumSelected') || state.locums[0].id;
+    const tabs = [['coverage','Coverage Weeks'],['calls','Call Dates'],['weekends','Weekend Dates'],['summary','Summary']].map((x,i)=>({key:x[0],label:x[1],active:i===0}));
+    getPortalBase('Locum Portal','Set weekly coverage and explicit call availability',tabs,'Locum Details');
+    const selected = state.locums.find(l => l.id === currentId) || state.locums[0];
+    el('#topActions').innerHTML = `<div class="top-inputs"><label>Locum</label><select id="locumSelect">${state.locums.map(l => `<option value="${l.id}" ${l.id===selected.id?'selected':''}>${l.name}</option>`).join('')}</select></div>`;
+    renderLocumSummaryBar(selected);
+    let active='coverage';
+    attachTabBehavior(tab => { active=tab; draw(); });
+    el('#locumSelect').onchange = e => { localStorage.setItem('schedLocumSelected', e.target.value); renderLocum(); };
+    function draw(){
+      const fresh = S(); const loc = fresh.locums.find(l => l.id === (localStorage.getItem('schedLocumSelected') || currentId)) || fresh.locums[0];
+      if(active==='coverage'){
+        el('#mainContent').innerHTML = renderLocumCoverageEditor(fresh, loc);
+        el('#inspectorContent').innerHTML = '<div class="detail-box">Choose General Locum or Covering for Specific Physician, then select which service(s) you can cover for each week.</div>';
+        bindLocumCoverageEditor(loc.id);
+      } else if(active==='calls'){
+        el('#mainContent').innerHTML = renderLocumCallEditor(fresh, loc);
+        el('#inspectorContent').innerHTML = '<div class="detail-box">Select exact weekday call dates. Locums are not in the automatic call pool.</div>';
+        bindLocumCallEditor(loc.id);
+      } else if(active==='weekends'){
+        el('#mainContent').innerHTML = renderLocumWeekendEditor(fresh, loc);
+        el('#inspectorContent').innerHTML = '<div class="detail-box">Select exact weekend start dates you are willing to cover.</div>';
+        bindLocumWeekendEditor(loc.id);
+      } else if(active==='summary'){
+        el('#mainContent').innerHTML = renderLocumSummaryPage(fresh, loc);
+        el('#inspectorContent').innerHTML = '<div class="detail-box">Admin can assign you only where you have explicitly volunteered.</div>';
+      }
+    }
+    draw();
+  }
+  function renderLocumSummaryBar(loc){
+    el('#summaryBar').innerHTML = `
+      <div class="summary-grid" style="grid-template-columns:repeat(4,1fr)">
+        <div class="card stat-card"><h3>Coverage Type</h3><div class="stat-value" style="font-size:18px">${loc.generalLocum ? 'General Locum' : `Covering ${safe(loc.coveringPhysician || 'Physician')}`}</div></div>
+        <div class="card stat-card"><h3>Coverage Weeks</h3><div class="stat-value">${(loc.weeklyCoverage||[]).length}</div></div>
+        <div class="card stat-card"><h3>Call Dates</h3><div class="stat-value">${(loc.callDates||[]).length}</div></div>
+        <div class="card stat-card"><h3>Weekend Dates</h3><div class="stat-value">${(loc.weekendDates||[]).length}</div></div>
+      </div>`;
+  }
+  function getUpcomingWeeks(state){ return window.SchedulerEngine.getWeeks(state.settings.scheduleStart || window.SchedulerEngine.iso(new Date()), state.settings.scheduleEnd || window.SchedulerEngine.iso(window.SchedulerEngine.addDays(new Date(), 56))); }
+  function monthLabel(monthKey){
+    const [y,m] = monthKey.split('-').map(Number);
+    return new Date(y, m-1, 1).toLocaleDateString(undefined,{month:'long',year:'numeric'});
+  }
+  function monthKeysBetween(startStr, endStr){
+    const start = window.SchedulerEngine.parseDate(startStr);
+    const end = window.SchedulerEngine.parseDate(endStr);
+    const out = [];
+    let y = start.getFullYear(), m = start.getMonth();
+    while (y < end.getFullYear() || (y === end.getFullYear() && m <= end.getMonth())){
+      out.push(`${y}-${String(m+1).padStart(2,'0')}`);
+      m += 1;
+      if(m > 11){ m = 0; y += 1; }
+    }
+    return out;
+  }
+  function renderMonthCalendar(monthKey, buildCell){
+    const [y,m] = monthKey.split('-').map(Number);
+    const first = new Date(y, m-1, 1);
+    const startDow = first.getDay();
+    const daysInMonth = new Date(y, m, 0).getDate();
+    let html = `<div class="month-card"><div class="month-header">${safe(monthLabel(monthKey))}</div><div class="month-grid">`;
+    ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].forEach(d => { html += `<div class="day-head">${d}</div>`; });
+    for(let i=0;i<startDow;i++) html += `<div class="day-cell muted"></div>`;
+    for(let day=1; day<=daysInMonth; day++){
+      const dateStr = `${monthKey}-${String(day).padStart(2,'0')}`;
+      html += buildCell(dateStr, day);
+    }
+    html += `</div></div>`;
+    return html;
+  }
+  function renderLocumCoverageEditor(state, loc){
+    const weeks = getUpcomingWeeks(state);
+    const start = state.settings.scheduleStart || weeks[0]?.weekStart || window.SchedulerEngine.iso(new Date());
+    const end = state.settings.scheduleEnd || weeks[weeks.length-1]?.weekEnd || window.SchedulerEngine.iso(window.SchedulerEngine.addDays(new Date(),56));
+    const monthKeys = monthKeysBetween(start, end);
+    const selectedMap = Object.fromEntries((loc.weeklyCoverage||[]).map(x => [x.weekStart, x.services || []]));
+    const weekByDate = {};
+    weeks.forEach(w => {
+      let cur = window.SchedulerEngine.parseDate(w.weekStart);
+      for(let i=0;i<5;i++){
+        weekByDate[window.SchedulerEngine.iso(cur)] = w.weekStart;
+        cur = window.SchedulerEngine.addDays(cur,1);
+      }
+    });
+    return `<div class="card">
+      <div class="section-title"><h2>Weekly Service Coverage</h2></div>
+      <div class="selector-grid">
+        <div><label class="small">Coverage Type</label><select id="locumGeneralType" class="field" style="width:100%"><option value="general" ${loc.generalLocum?'selected':''}>General Locum</option><option value="covering" ${!loc.generalLocum?'selected':''}>Covering for Specific Physician</option></select></div>
+        <div ${loc.generalLocum?'class="hidden"':''} id="coveringWrap"><label class="small">Covering Physician</label><select id="coveringPhysician" class="field" style="width:100%">${state.physicians.map(p => `<option value="${p.id}" ${loc.coveringPhysician===p.id?'selected':''}>${p.name}</option>`).join('')}</select></div>
+      </div>
+      <div class="detail-box" style="margin-top:12px">Click any weekday in the calendar to select that Monday to Friday service week. Selected weeks appear below so you can choose which services you are covering.</div>
+      <div id="locumCoverageCalendar" class="calendar-months">${monthKeys.map(monthKey => renderMonthCalendar(monthKey, (dateStr, day) => {
+        const weekStart = weekByDate[dateStr];
+        const selected = weekStart && selectedMap[weekStart];
+        const weekend = [0,6].includes(new Date(dateStr+'T12:00:00').getDay());
+        const cls = ['day-cell', weekend ? 'weekend-muted' : '', weekStart ? 'clickable' : 'disabled', selected ? 'range-selected' : ''].join(' ').trim();
+        const serviceText = selected ? `<span class="day-note">${safe((selected||[]).join(', '))}</span>` : '';
+        return `<button type="button" class="${cls}" data-loc-coverage-date="${dateStr}" ${weekStart ? '' : 'disabled'}><span class="day-num">${day}</span>${serviceText}</button>`;
+      })).join('')}</div>
+      <div id="locumCoverageSelections" style="margin-top:14px"></div>
+      <div class="inline-actions" style="margin-top:14px"><button class="btn primary" id="saveLocumCoverage">Save Coverage</button></div>
+    </div>`;
+  }
+  function bindLocumCoverageEditor(locumId){
+    const state = S();
+    const weeks = getUpcomingWeeks(state);
+    const loc = state.locums.find(l => l.id === locumId);
+    const selectedMap = Object.fromEntries((loc.weeklyCoverage||[]).map(x => [x.weekStart, new Set(x.services||[])]));
+    const weekByDate = {};
+    weeks.forEach(w => {
+      let cur = window.SchedulerEngine.parseDate(w.weekStart);
+      for(let i=0;i<5;i++){
+        weekByDate[window.SchedulerEngine.iso(cur)] = w.weekStart;
+        cur = window.SchedulerEngine.addDays(cur,1);
+      }
+    });
+    const typeSel = el('#locumGeneralType'); if(typeSel) typeSel.onchange = () => renderLocum();
+    function redrawSelections(){
+      const wrap = el('#locumCoverageSelections');
+      const selectedWeeks = weeks.filter(w => selectedMap[w.weekStart]);
+      wrap.innerHTML = selectedWeeks.length ? selectedWeeks.map(w => `
+        <div class="list-item coverage-row">
+          <div><strong>${safe(w.weekStart)} to ${safe(w.weekEnd)}</strong><div class="small">Select services for this week</div></div>
+          <div class="checkbox-grid">${serviceRows.filter(s => !['Echo','Weekend'].includes(s)).map(service => `<label class="check-card"><input type="checkbox" data-week-service="${w.weekStart}|${service}" ${selectedMap[w.weekStart].has(service)?'checked':''}> ${safe(service)}</label>`).join('')}</div>
+        </div>`).join('') : '<div class="detail-box">No weeks selected yet.</div>';
+      els('[data-week-service]').forEach(cb => cb.onchange = () => {
+        const [week, service] = cb.dataset.weekService.split('|');
+        if(!selectedMap[week]) selectedMap[week] = new Set();
+        if(cb.checked) selectedMap[week].add(service); else selectedMap[week].delete(service);
+      });
+    }
+    els('[data-loc-coverage-date]').forEach(btn => btn.onclick = () => {
+      const dateStr = btn.dataset.locCoverageDate;
+      const weekStart = weekByDate[dateStr];
+      if(!weekStart) return;
+      if(selectedMap[weekStart]) delete selectedMap[weekStart];
+      else selectedMap[weekStart] = new Set();
+      redrawSelections();
+      els('[data-loc-coverage-date]').forEach(b => {
+        const ws = weekByDate[b.dataset.locCoverageDate];
+        b.classList.toggle('range-selected', !!(ws && selectedMap[ws]));
+      });
+    });
+    redrawSelections();
+    el('#saveLocumCoverage').onclick = () => {
+      const current = S();
+      const loc2 = current.locums.find(l => l.id === locumId);
+      loc2.generalLocum = el('#locumGeneralType').value === 'general';
+      loc2.coveringPhysician = loc2.generalLocum ? '' : (el('#coveringPhysician')?.value || '');
+      loc2.weeklyCoverage = Object.entries(selectedMap)
+        .map(([weekStart, services]) => ({ weekStart, services:[...services].sort() }))
+        .filter(x => x.services.length);
+      window.AppState.saveLocum(locumId, loc2);
+      alert('Locum weekly coverage saved.');
+      renderLocum();
+      const tab=el('.side-nav button[data-tab="coverage"]'); if(tab) tab.click();
+    };
+  }
+  function renderLocumCallEditor(state, loc){
+    const start = state.settings.scheduleStart || window.SchedulerEngine.iso(new Date());
+    const end = state.settings.scheduleEnd || window.SchedulerEngine.iso(window.SchedulerEngine.addDays(window.SchedulerEngine.parseDate(start), 56));
+    const monthKeys = monthKeysBetween(start, end);
+    const selected = new Set(loc.callDates || []);
+    return `<div class="card">
+      <div class="section-title"><h2>Weekday Call Dates</h2><button class="btn" id="clearCallDates">Clear All</button></div>
+      <div class="detail-box">Click weekday dates you are willing to cover. Weekend dates are managed separately.</div>
+      <div id="locumCallStrip" class="calendar-months" style="margin-top:14px">${monthKeys.map(monthKey => renderMonthCalendar(monthKey, (dateStr, day) => {
+        const dow = new Date(dateStr+'T12:00:00').getDay();
+        const weekday = ![0,6].includes(dow);
+        const active = selected.has(dateStr);
+        const cls = ['day-cell', weekday ? 'clickable' : 'disabled', active ? 'single-selected' : '', !weekday ? 'weekend-muted' : ''].join(' ').trim();
+        return `<button type="button" class="${cls}" data-loc-call="${dateStr}" ${weekday ? '' : 'disabled'}><span class="day-num">${day}</span></button>`;
+      })).join('')}</div>
+      <div class="inline-actions" style="margin-top:14px"><button class="btn primary" id="saveLocumCalls">Save Call Dates</button></div>
+    </div>`;
+  }
+  function bindLocumCallEditor(locumId){
+    const selection = { singles:new Set((S().locums.find(l => l.id===locumId)?.callDates)||[]) };
+    function redraw(){ els('[data-loc-call]').forEach(btn => { const d = btn.dataset.locCall; btn.classList.toggle('single-selected', selection.singles.has(d)); }); }
+    els('[data-loc-call]').forEach(btn => btn.onclick = () => { const d=btn.dataset.locCall; if(selection.singles.has(d)) selection.singles.delete(d); else selection.singles.add(d); redraw(); });
+    redraw();
+    el('#clearCallDates').onclick = () => { selection.singles.clear(); redraw(); };
+    el('#saveLocumCalls').onclick = () => { window.AppState.saveLocum(locumId, { callDates:[...selection.singles].sort() }); alert('Locum call dates saved.'); renderLocum(); const tab=el('.side-nav button[data-tab="calls"]'); if(tab) tab.click(); };
+  }
+  function renderLocumWeekendEditor(state, loc){
+    const start = state.settings.scheduleStart || window.SchedulerEngine.iso(new Date());
+    const end = state.settings.scheduleEnd || window.SchedulerEngine.iso(window.SchedulerEngine.addDays(window.SchedulerEngine.parseDate(start), 56));
+    const monthKeys = monthKeysBetween(start, end);
+    const selected = new Set(loc.weekendDates || []);
+    return `<div class="card">
+      <div class="section-title"><h2>Weekend Call Dates</h2><button class="btn" id="clearWeekendDates">Clear All</button></div>
+      <div class="detail-box">Click a Saturday or Sunday to select the entire weekend. The stored weekend date is the Saturday start date.</div>
+      <div id="locumWeekendStrip" class="calendar-months" style="margin-top:14px">${monthKeys.map(monthKey => renderMonthCalendar(monthKey, (dateStr, day) => {
+        const dt = new Date(dateStr+'T12:00:00');
+        const dow = dt.getDay();
+        let sat = '';
+        if(dow === 6) sat = dateStr;
+        else if(dow === 0){
+          const prev = window.SchedulerEngine.addDays(dt,-1);
+          sat = window.SchedulerEngine.iso(prev);
+        }
+        const weekend = dow === 6 || dow === 0;
+        const active = sat && selected.has(sat);
+        const cls = ['day-cell', weekend ? 'clickable weekend' : 'disabled', active ? 'range-selected' : '', weekend ? '' : ''].join(' ').trim();
+        return `<button type="button" class="${cls}" data-loc-weekend="${sat}" ${weekend ? '' : 'disabled'}><span class="day-num">${day}</span>${dow===6?'<span class="day-note">Sat</span>':dow===0?'<span class="day-note">Sun</span>':''}</button>`;
+      })).join('')}</div>
+      <div class="inline-actions" style="margin-top:14px"><button class="btn primary" id="saveLocumWeekends">Save Weekend Dates</button></div>
+    </div>`;
+  }
+  function bindLocumWeekendEditor(locumId){
+    const selection = { singles:new Set((S().locums.find(l => l.id===locumId)?.weekendDates)||[]) };
+    function redraw(){ els('[data-loc-weekend]').forEach(btn => { const d = btn.dataset.locWeekend; if(!d) return; btn.classList.toggle('range-selected', selection.singles.has(d)); }); }
+    els('[data-loc-weekend]').forEach(btn => btn.onclick = () => { const d=btn.dataset.locWeekend; if(!d) return; if(selection.singles.has(d)) selection.singles.delete(d); else selection.singles.add(d); redraw(); });
+    redraw();
+    el('#clearWeekendDates').onclick = () => { selection.singles.clear(); redraw(); };
+    el('#saveLocumWeekends').onclick = () => { window.AppState.saveLocum(locumId, { weekendDates:[...selection.singles].sort() }); alert('Locum weekend dates saved.'); renderLocum(); const tab=el('.side-nav button[data-tab="weekends"]'); if(tab) tab.click(); };
+  }
+  function renderLocumSummaryPage(state, loc){
+    return `<div class="panel-grid"><div class="card"><div class="section-title"><h2>Weekly Coverage</h2></div><div class="list">${(loc.weeklyCoverage||[]).length ? loc.weeklyCoverage.map(w => `<div class="list-item"><strong>${safe(w.weekStart)}</strong><div class="small">${safe((w.services||[]).join(', '))}</div></div>`).join('') : '<div class="list-item">No weekly service coverage selected.</div>'}</div></div><div class="stack"><div class="card"><div class="section-title"><h2>Weekday Call Dates</h2></div><div class="small">${(loc.callDates||[]).join(', ') || 'None selected'}</div></div><div class="card"><div class="section-title"><h2>Weekend Dates</h2></div><div class="small">${(loc.weekendDates||[]).join(', ') || 'None selected'}</div></div></div></div>`;
+  }
+
+  function renderMobile(){
+    const state = S();
+    const publishedWeeks = state.publishedWeeks?.length ? state.publishedWeeks : state.draftWeeks;
+    const publishedNights = state.publishedNightManual?.length ? state.publishedNightManual : state.draftNightManual;
+    document.body.innerHTML = `<div class="mobile-shell"><div class="brand">Department Scheduling</div><p class="subtitle">Read only mobile snapshot</p><div class="card-grid-2"><div class="card"><div class="section-title"><h2>Upcoming Weekends</h2></div><div class="list">${(publishedWeeks||[]).slice(0,6).map(w => `<div class="list-item"><strong>${safe(w.weekendStart)}</strong><div>${chipForOwner(state,w.weekendOwner,'weekend')}</div></div>`).join('') || '<div class="list-item">No schedule loaded.</div>'}</div></div><div class="card"><div class="section-title"><h2>Upcoming Night Calls</h2></div><div class="list">${(publishedNights||[]).filter(n=>!n.weekend).slice(0,10).map(n => `<div class="list-item"><strong>${safe(n.date)}</strong><div>${chipForOwner(state,n.owner)}</div></div>`).join('') || '<div class="list-item">No nights loaded.</div>'}</div></div></div><div class="card" style="margin-top:14px"><div class="section-title"><h2>Master Schedule Snapshot</h2></div>${renderMasterSchedule({ ...state, draftWeeks: publishedWeeks })}</div></div>`;
+  }
+
+  document.addEventListener('DOMContentLoaded', () => {
+    try{
+      if(PAGE==='index') renderIndex();
+      else if(PAGE==='admin') renderAdmin();
+      else if(PAGE==='physician') renderPhysician();
+      else if(PAGE==='locum') renderLocum();
+      else if(PAGE==='mobile') renderMobile();
+      else renderIndex();
+    }catch(err){
+      console.error(err);
+      document.body.innerHTML = `<div class="home-shell"><div class="brand">Department Scheduling</div><p class="subtitle">The page failed to render.</p><pre class="card">${safe(err.stack || String(err))}</pre></div>`;
+    }
+  });
 })();
 </script>
 </body>

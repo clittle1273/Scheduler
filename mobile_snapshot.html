@@ -4,34 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Mobile Snapshot</title>
-  <style>
-
-/* Exact fix: fairness header service cells only */
-.fairness-tight th.service-ICU,
-.fairness-tight th.service-GIM,
-.fairness-tight th.service-CAR1,
-.fairness-tight th.service-CAR2,
-.fairness-tight th.service-OP1,
-.fairness-tight th.service-OP2,
-.fairness-tight th.service-OP3,
-.fairness-tight th.service-Resp,
-.fairness-tight th.service-Nephro,
-.fairness-tight th.service-Echo,
-.fairness-tight th.service-Weekend{
-  color:#ffffff !important;
-}
-
-
-
-
-
-
-
-
-
-
-
-:root{
+  <style>:root{
   --bg:#f4f6f8;
   --panel:#ffffff;
   --soft:#eef2f5;
@@ -257,9 +230,6 @@ thead .service-Weekend{background:var(--svc-weekend)!important}
   .summary-grid{grid-template-columns:repeat(2,minmax(140px,1fr))}
   .top-inputs{display:grid;grid-template-columns:1fr 1fr;align-items:end}
 }
-
-.night-month-nav{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:12px 0}
-.night-month-nav .month-label{font-weight:700}
 </style>
 </head>
 <body data-page="mobile">
@@ -2116,14 +2086,6 @@ function chipForOwner(state, ownerId, kind=''){
     const archives = publishedArchivesForYear(state, year).slice().sort((a,b) => (a.start || '').localeCompare(b.start || ''));
     const selectedArchive = selectedArchiveForYear(state, year);
     if(selectedArchive) localStorage.setItem('physPublishedArchiveId', selectedArchive.id);
-
-    const nights = selectedArchive?.nightAssignments || [];
-    const months = Array.from(new Set(nights.map(n => n.date.slice(0,7)))).sort();
-    const storedMonth = localStorage.getItem('mobileNightMonth') || '';
-    const activeMonth = months.includes(storedMonth) ? storedMonth : (months[0] || '');
-    const activeIndex = Math.max(0, months.indexOf(activeMonth));
-    const byDate = Object.fromEntries(nights.map(n => [n.date, n]));
-
     document.body.innerHTML = `<div class="mobile-shell">
       <div class="brand">Department Scheduling</div>
       <p class="subtitle">Mobile My Schedule Snapshot</p>
@@ -2135,61 +2097,13 @@ function chipForOwner(state, ownerId, kind=''){
         </div>
       </div>
       ${renderMySchedule(state, currentId)}
-      <div class="card" style="margin-top:14px">
-        <div class="section-title"><h2>Night Call Calendar</h2>${badge('Read only')}</div>
-        ${months.length ? `
-          <div class="night-month-nav">
-            <button class="btn ghost" id="mobileNightPrevMonthBtn" ${activeIndex <= 0 ? 'disabled' : ''}>Previous Month</button>
-            <div class="month-label">${safe(monthLabel(activeMonth))}</div>
-            <button class="btn ghost" id="mobileNightNextMonthBtn" ${activeIndex >= months.length - 1 ? 'disabled' : ''}>Next Month</button>
-          </div>
-          <div class="month-card">
-            <div class="month-header">${safe(monthLabel(activeMonth))}</div>
-            <div class="month-grid">
-              ${['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(d => `<div class="day-head">${d}</div>`).join('')}
-              ${(() => {
-                const [y,m] = activeMonth.split('-').map(Number);
-                const first = new Date(y, m-1, 1);
-                const startDow = first.getDay();
-                const daysInMonth = new Date(y, m, 0).getDate();
-                let html = '';
-                for(let i=0;i<startDow;i++) html += `<div class="day-cell muted"></div>`;
-                for(let day=1; day<=daysInMonth; day++){
-                  const dateStr = `${activeMonth}-${String(day).padStart(2,'0')}`;
-                  const entry = byDate[dateStr];
-                  const weekend = entry?.weekend;
-                  const mine = entry?.owner === currentId;
-                  const cls = ['day-cell', weekend ? 'weekend' : '', mine ? 'mine' : '', dateStr === todayIso() ? 'today' : ''].join(' ').trim();
-                  const label = entry ? chipForOwner(state, entry.owner, weekend ? 'weekend' : '') : '<span class="small">—</span>';
-                  html += `<div class="${cls}"><span class="day-num">${day}</span>${label}<span class="day-note">${entry ? (weekend ? 'Weekend call' : 'Night call') : ''}</span></div>`;
-                }
-                return html;
-              })()}
-            </div>
-          </div>
-        ` : '<div class="list-item">No night call schedule available.</div>'}
-      </div>
     </div>`;
     const ps = document.querySelector('#mobilePhysicianSelect');
     if(ps) ps.onchange = e => { localStorage.setItem('schedPhysicianSelected', e.target.value); renderMobile(); };
     const ys = document.querySelector('#mobilePhysYear');
-    if(ys) ys.onchange = e => { localStorage.setItem('physPortalYear', e.target.value); localStorage.removeItem('physPublishedArchiveId'); localStorage.removeItem('mobileNightMonth'); renderMobile(); };
+    if(ys) ys.onchange = e => { localStorage.setItem('physPortalYear', e.target.value); localStorage.removeItem('physPublishedArchiveId'); renderMobile(); };
     const ss = document.querySelector('#mobilePhysSchedule');
-    if(ss) ss.onchange = e => { localStorage.setItem('physPublishedArchiveId', e.target.value); localStorage.removeItem('mobileNightMonth'); renderMobile(); };
-    const prevBtn = document.querySelector('#mobileNightPrevMonthBtn');
-    const nextBtn = document.querySelector('#mobileNightNextMonthBtn');
-    if(prevBtn) prevBtn.onclick = () => {
-      if(activeIndex > 0){
-        localStorage.setItem('mobileNightMonth', months[activeIndex - 1]);
-        renderMobile();
-      }
-    };
-    if(nextBtn) nextBtn.onclick = () => {
-      if(activeIndex < months.length - 1){
-        localStorage.setItem('mobileNightMonth', months[activeIndex + 1]);
-        renderMobile();
-      }
-    };
+    if(ss) ss.onchange = e => { localStorage.setItem('physPublishedArchiveId', e.target.value); renderMobile(); };
   }
 
   document.addEventListener('DOMContentLoaded', () => {
