@@ -48,3 +48,6 @@ Notes
 - All five HTML portals are configured to hydrate from Supabase on load and poll every 15 seconds.
 - Upload only the files inside the Version_1.0_supabase_configured folder. Do not upload the __MACOSX folder.
 - Admin auth is not yet turned on in this package.
+
+
+This build uses Supabase as the source of truth for scheduler state.

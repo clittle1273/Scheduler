@@ -262,7 +262,6 @@ thead .service-Weekend{background:var(--svc-weekend)!important}
   .top-inputs{display:grid;grid-template-columns:1fr 1fr;align-items:end}
 }
 </style>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="./supabase.js"></script>
 </head>
 <body data-page="locum">
@@ -272,20 +271,25 @@ thead .service-Weekend{background:var(--svc-weekend)!important}
   let memoryFallback = null;
 
   function storageAvailable(){
-    try{
-      const k='__sched_test__';
-      localStorage.setItem(k,'1');
-      localStorage.removeItem(k);
-      return true;
-    }catch(e){ return false; }
+    return false;
   }
   function readRaw(){
-    try{ if(storageAvailable()) return localStorage.getItem(STORAGE_KEY); }catch(e){}
-    return memoryFallback;
+    if(memoryFallback != null) return memoryFallback;
+    try{
+      const boot = window.SchedulerCloud?.getBootState?.();
+      if(boot && typeof boot === 'object'){
+        memoryFallback = JSON.stringify(boot);
+        return memoryFallback;
+      }
+    }catch(e){}
+    return null;
   }
   function writeRaw(value){
-    try{ if(storageAvailable()) { localStorage.setItem(STORAGE_KEY, value); } }catch(e){}
     memoryFallback = value;
+    try{
+      const parsed = JSON.parse(value);
+      window.SchedulerCloud?.setBootState?.(parsed);
+    }catch(e){}
     try{ window.SchedulerCloud?.queuePush?.(STORAGE_KEY, value); }catch(e){}
   }
   function deepClone(x){ return JSON.parse(JSON.stringify(x)); }
@@ -1706,16 +1710,16 @@ function chipForOwner(state, ownerId, kind=''){
 
   function renderPhysician(){
     const state = S();
-    const currentId = (localStorage.getItem('schedPhysicianSelected') || state.physicians[0].id);
+    const currentId = (window.AppPrefs.get('schedPhysicianSelected') || state.physicians[0].id);
     const tabs = [['schedule','Master Schedule'],['calls','Night Call'],['request','Submit Request'],['history','Request History']].map((x,i)=>({key:x[0],label:x[1],active:i===0}));
     getPortalBase('Physician Portal','View assignments and submit requests',tabs,'Physician Details');
     el('#topActions').innerHTML = `<div class="top-inputs"><label>Physician</label><select id="physicianSelect">${state.physicians.map(p => `<option value="${p.id}" ${p.id===currentId?'selected':''}>${p.name}</option>`).join('')}</select></div>`;
     renderPhysicianSummaryBar(currentId);
     let active='schedule';
     attachTabBehavior(tab => { active=tab; draw(); });
-    el('#physicianSelect').onchange = e => { localStorage.setItem('schedPhysicianSelected', e.target.value); renderPhysician(); };
+    el('#physicianSelect').onchange = e => { window.AppPrefs.set('schedPhysicianSelected', e.target.value); renderPhysician(); };
     function draw(){
-      const fresh = S(); const pid = localStorage.getItem('schedPhysicianSelected') || currentId;
+      const fresh = S(); const pid = window.AppPrefs.get('schedPhysicianSelected') || currentId;
       if(active==='schedule'){
         el('#mainContent').innerHTML = renderPhysicianSchedule(fresh,pid);
         el('#inspectorContent').innerHTML = renderPhysicianInspector(fresh,pid);
@@ -1789,7 +1793,7 @@ function chipForOwner(state, ownerId, kind=''){
 
   function renderLocum(){
     const state = S();
-    const currentId = localStorage.getItem('schedLocumSelected') || state.locums[0].id;
+    const currentId = window.AppPrefs.get('schedLocumSelected') || state.locums[0].id;
     const tabs = [['coverage','Coverage Weeks'],['calls','Call Dates'],['weekends','Weekend Dates'],['summary','Summary']].map((x,i)=>({key:x[0],label:x[1],active:i===0}));
     getPortalBase('Locum Portal','Set weekly coverage and explicit call availability',tabs,null);
     const inspector = document.querySelector('.inspector'); if(inspector) inspector.remove();
@@ -1799,7 +1803,7 @@ function chipForOwner(state, ownerId, kind=''){
     renderLocumSummaryBar(selected);
     let active='coverage';
     attachTabBehavior(tab => { active=tab; draw(); });
-    el('#locumSelect').onchange = e => { localStorage.setItem('schedLocumSelected', e.target.value); renderLocum(); };
+    el('#locumSelect').onchange = e => { window.AppPrefs.set('schedLocumSelected', e.target.value); renderLocum(); };
     if(el('#saveLocumInitials')) el('#saveLocumInitials').onclick = () => {
       const value = (el('#locumInitials')?.value || '').toUpperCase().replace(/[^A-Z]/g,'').slice(0,4);
       window.AppState.saveLocum(selected.id, { initials:value });
@@ -1807,7 +1811,7 @@ function chipForOwner(state, ownerId, kind=''){
       renderLocum();
     };
     function draw(){
-      const fresh = S(); const loc = fresh.locums.find(l => l.id === (localStorage.getItem('schedLocumSelected') || currentId)) || fresh.locums[0];
+      const fresh = S(); const loc = fresh.locums.find(l => l.id === (window.AppPrefs.get('schedLocumSelected') || currentId)) || fresh.locums[0];
       if(active==='coverage'){
         el('#mainContent').innerHTML = renderLocumCoverageEditor(fresh, loc);
         bindLocumCoverageEditor(loc.id);
@@ -1870,7 +1874,7 @@ function chipForOwner(state, ownerId, kind=''){
     const start = state.settings.scheduleStart || weeks[0]?.weekStart || window.SchedulerEngine.iso(new Date());
     const end = state.settings.scheduleEnd || weeks[weeks.length-1]?.weekEnd || window.SchedulerEngine.iso(window.SchedulerEngine.addDays(new Date(),56));
     const monthKeys = monthKeysBetween(start, end);
-    const currentMonth = localStorage.getItem('locCoverageMonth') || monthKeys[0];
+    const currentMonth = window.AppPrefs.get('locCoverageMonth') || monthKeys[0];
     const selectedMap = Object.fromEntries((loc.weeklyCoverage||[]).map(x => [x.weekStart, x.services || []]));
     const selectedCovering = Object.fromEntries((loc.weeklyCoverage||[]).map(x => [x.weekStart, x.coveringPhysician || loc.coveringPhysician || '']));
     const weekByDate = {};
@@ -1914,7 +1918,7 @@ function chipForOwner(state, ownerId, kind=''){
     const start = state.settings.scheduleStart || weeks[0]?.weekStart || window.SchedulerEngine.iso(new Date());
     const end = state.settings.scheduleEnd || weeks[weeks.length-1]?.weekEnd || window.SchedulerEngine.iso(window.SchedulerEngine.addDays(new Date(),56));
     const monthKeys = monthKeysBetween(start, end);
-    const currentMonth = localStorage.getItem('locCoverageMonth') || monthKeys[0];
+    const currentMonth = window.AppPrefs.get('locCoverageMonth') || monthKeys[0];
     const currentIdx = monthKeys.indexOf(currentMonth);
     const loc = state.locums.find(l => l.id === locumId);
     const selectedMap = Object.fromEntries((loc.weeklyCoverage||[]).map(x => [x.weekStart, new Set(x.services||[])]));
@@ -1934,12 +1938,12 @@ function chipForOwner(state, ownerId, kind=''){
     };
     if(el('#locCovPrevMonth')) el('#locCovPrevMonth').onclick = () => {
       const nextIdx = Math.max(0, currentIdx - 1);
-      localStorage.setItem('locCoverageMonth', monthKeys[nextIdx]);
+      window.AppPrefs.set('locCoverageMonth', monthKeys[nextIdx]);
       renderLocum(); const tab=el('.side-nav button[data-tab="coverage"]'); if(tab) tab.click();
     };
     if(el('#locCovNextMonth')) el('#locCovNextMonth').onclick = () => {
       const nextIdx = Math.min(monthKeys.length - 1, currentIdx + 1);
-      localStorage.setItem('locCoverageMonth', monthKeys[nextIdx]);
+      window.AppPrefs.set('locCoverageMonth', monthKeys[nextIdx]);
       renderLocum(); const tab=el('.side-nav button[data-tab="coverage"]'); if(tab) tab.click();
     };
     function redrawSelections(){
@@ -2004,7 +2008,7 @@ function chipForOwner(state, ownerId, kind=''){
     const start = state.settings.scheduleStart || window.SchedulerEngine.iso(new Date());
     const end = state.settings.scheduleEnd || window.SchedulerEngine.iso(window.SchedulerEngine.addDays(window.SchedulerEngine.parseDate(start), 56));
     const monthKeys = monthKeysBetween(start, end);
-    const currentMonth = localStorage.getItem('locCallMonth') || monthKeys[0];
+    const currentMonth = window.AppPrefs.get('locCallMonth') || monthKeys[0];
     const selected = new Set(loc.callDates || []);
     return `<div class="card">
       <div class="section-title"><h2>Weekday Call Dates</h2>
@@ -2031,7 +2035,7 @@ function chipForOwner(state, ownerId, kind=''){
     const start = state.settings.scheduleStart || window.SchedulerEngine.iso(new Date());
     const end = state.settings.scheduleEnd || window.SchedulerEngine.iso(window.SchedulerEngine.addDays(window.SchedulerEngine.parseDate(start), 56));
     const monthKeys = monthKeysBetween(start, end);
-    const currentMonth = localStorage.getItem('locCallMonth') || monthKeys[0];
+    const currentMonth = window.AppPrefs.get('locCallMonth') || monthKeys[0];
     const currentIdx = monthKeys.indexOf(currentMonth);
     const selection = { singles:new Set((S().locums.find(l => l.id===locumId)?.callDates)||[]) };
     function redraw(){ els('[data-loc-call]').forEach(btn => { const d = btn.dataset.locCall; btn.classList.toggle('single-selected', selection.singles.has(d)); }); }
@@ -2039,12 +2043,12 @@ function chipForOwner(state, ownerId, kind=''){
     redraw();
     if(el('#locCallPrevMonth')) el('#locCallPrevMonth').onclick = () => {
       const nextIdx = Math.max(0, currentIdx - 1);
-      localStorage.setItem('locCallMonth', monthKeys[nextIdx]);
+      window.AppPrefs.set('locCallMonth', monthKeys[nextIdx]);
       renderLocum(); const tab=el('.side-nav button[data-tab="calls"]'); if(tab) tab.click();
     };
     if(el('#locCallNextMonth')) el('#locCallNextMonth').onclick = () => {
       const nextIdx = Math.min(monthKeys.length - 1, currentIdx + 1);
-      localStorage.setItem('locCallMonth', monthKeys[nextIdx]);
+      window.AppPrefs.set('locCallMonth', monthKeys[nextIdx]);
       renderLocum(); const tab=el('.side-nav button[data-tab="calls"]'); if(tab) tab.click();
     };
     el('#clearCallDates').onclick = () => { selection.singles.clear(); redraw(); };
@@ -2054,7 +2058,7 @@ function chipForOwner(state, ownerId, kind=''){
     const start = state.settings.scheduleStart || window.SchedulerEngine.iso(new Date());
     const end = state.settings.scheduleEnd || window.SchedulerEngine.iso(window.SchedulerEngine.addDays(window.SchedulerEngine.parseDate(start), 56));
     const monthKeys = monthKeysBetween(start, end);
-    const currentMonth = localStorage.getItem('locWeekendMonth') || monthKeys[0];
+    const currentMonth = window.AppPrefs.get('locWeekendMonth') || monthKeys[0];
     const selected = new Set(loc.weekendDates || []);
     return `<div class="card">
       <div class="section-title"><h2>Weekend Call Dates</h2>
@@ -2088,7 +2092,7 @@ function chipForOwner(state, ownerId, kind=''){
     const start = state.settings.scheduleStart || window.SchedulerEngine.iso(new Date());
     const end = state.settings.scheduleEnd || window.SchedulerEngine.iso(window.SchedulerEngine.addDays(window.SchedulerEngine.parseDate(start), 56));
     const monthKeys = monthKeysBetween(start, end);
-    const currentMonth = localStorage.getItem('locWeekendMonth') || monthKeys[0];
+    const currentMonth = window.AppPrefs.get('locWeekendMonth') || monthKeys[0];
     const currentIdx = monthKeys.indexOf(currentMonth);
     const selection = { singles:new Set((S().locums.find(l => l.id===locumId)?.weekendDates)||[]) };
     function redraw(){ els('[data-loc-weekend]').forEach(btn => { const d = btn.dataset.locWeekend; if(!d) return; btn.classList.toggle('range-selected', selection.singles.has(d)); }); }
@@ -2096,12 +2100,12 @@ function chipForOwner(state, ownerId, kind=''){
     redraw();
     if(el('#locWeekendPrevMonth')) el('#locWeekendPrevMonth').onclick = () => {
       const nextIdx = Math.max(0, currentIdx - 1);
-      localStorage.setItem('locWeekendMonth', monthKeys[nextIdx]);
+      window.AppPrefs.set('locWeekendMonth', monthKeys[nextIdx]);
       renderLocum(); const tab=el('.side-nav button[data-tab="weekends"]'); if(tab) tab.click();
     };
     if(el('#locWeekendNextMonth')) el('#locWeekendNextMonth').onclick = () => {
       const nextIdx = Math.min(monthKeys.length - 1, currentIdx + 1);
-      localStorage.setItem('locWeekendMonth', monthKeys[nextIdx]);
+      window.AppPrefs.set('locWeekendMonth', monthKeys[nextIdx]);
       renderLocum(); const tab=el('.side-nav button[data-tab="weekends"]'); if(tab) tab.click();
     };
     el('#clearWeekendDates').onclick = () => { selection.singles.clear(); redraw(); };

@@ -3,20 +3,25 @@
   let memoryFallback = null;
 
   function storageAvailable(){
-    try{
-      const k='__sched_test__';
-      localStorage.setItem(k,'1');
-      localStorage.removeItem(k);
-      return true;
-    }catch(e){ return false; }
+    return false;
   }
   function readRaw(){
-    try{ if(storageAvailable()) return localStorage.getItem(STORAGE_KEY); }catch(e){}
-    return memoryFallback;
+    if(memoryFallback != null) return memoryFallback;
+    try{
+      const boot = window.SchedulerCloud?.getBootState?.();
+      if(boot && typeof boot === 'object'){
+        memoryFallback = JSON.stringify(boot);
+        return memoryFallback;
+      }
+    }catch(e){}
+    return null;
   }
   function writeRaw(value){
-    try{ if(storageAvailable()) { localStorage.setItem(STORAGE_KEY, value); } }catch(e){}
     memoryFallback = value;
+    try{
+      const parsed = JSON.parse(value);
+      window.SchedulerCloud?.setBootState?.(parsed);
+    }catch(e){}
     try{ window.SchedulerCloud?.queuePush?.(STORAGE_KEY, value); }catch(e){}
   }
   function deepClone(x){ return JSON.parse(JSON.stringify(x)); }

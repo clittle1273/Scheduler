@@ -265,7 +265,6 @@ thead .service-Weekend{background:var(--svc-weekend)!important}
 .night-month-nav{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px}
 .night-month-nav .month-label{font-weight:700}
 </style>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="./supabase.js"></script>
 </head>
 <body data-page="admin">
@@ -294,7 +293,7 @@ function exportNightExcel(){
   const nights = (state && state.draftNightManual) ? state.draftNightManual : [];
   if(!nights.length) return alert("No night call calendar found");
   const months = Array.from(new Set(nights.map(n => n.date.slice(0,7)))).sort();
-  const storedMonth = localStorage.getItem('adminNightMonth') || '';
+  const storedMonth = window.AppPrefs.get('adminNightMonth') || '';
   const activeMonth = months.includes(storedMonth) ? storedMonth : (months[0] || '');
   const visible = nights.filter(n => n.date.startsWith(activeMonth));
   const people = Object.fromEntries([...(state?.physicians || []), ...(state?.locums || [])].map(p => [p.id, p.name || p.id]));
@@ -431,20 +430,25 @@ function exportMasterPDF(){
   let memoryFallback = null;
 
   function storageAvailable(){
-    try{
-      const k='__sched_test__';
-      localStorage.setItem(k,'1');
-      localStorage.removeItem(k);
-      return true;
-    }catch(e){ return false; }
+    return false;
   }
   function readRaw(){
-    try{ if(storageAvailable()) return localStorage.getItem(STORAGE_KEY); }catch(e){}
-    return memoryFallback;
+    if(memoryFallback != null) return memoryFallback;
+    try{
+      const boot = window.SchedulerCloud?.getBootState?.();
+      if(boot && typeof boot === 'object'){
+        memoryFallback = JSON.stringify(boot);
+        return memoryFallback;
+      }
+    }catch(e){}
+    return null;
   }
   function writeRaw(value){
-    try{ if(storageAvailable()) { localStorage.setItem(STORAGE_KEY, value); } }catch(e){}
     memoryFallback = value;
+    try{
+      const parsed = JSON.parse(value);
+      window.SchedulerCloud?.setBootState?.(parsed);
+    }catch(e){}
     try{ window.SchedulerCloud?.queuePush?.(STORAGE_KEY, value); }catch(e){}
   }
   function deepClone(x){ return JSON.parse(JSON.stringify(x)); }
@@ -1755,7 +1759,7 @@ function chipForOwner(state, ownerId, kind=''){
         if(inspector) inspector.innerHTML = '';
         bindNightCalendar();
         const months = Array.from(new Set(((st.draftNightManual || []).map(n => n.date.slice(0,7))))).sort();
-        const storedMonth = localStorage.getItem('adminNightMonth') || '';
+        const storedMonth = window.AppPrefs.get('adminNightMonth') || '';
         const activeMonth = months.includes(storedMonth) ? storedMonth : (months[0] || '');
         const activeIndex = Math.max(0, months.indexOf(activeMonth));
         const prevBtn = el('#adminNightPrevMonthBtn');
@@ -1764,13 +1768,13 @@ function chipForOwner(state, ownerId, kind=''){
         const pdfBtn = el('#adminExportNightPDF');
         if(prevBtn) prevBtn.onclick = () => {
           if(activeIndex > 0){
-            localStorage.setItem('adminNightMonth', months[activeIndex - 1]);
+            window.AppPrefs.set('adminNightMonth', months[activeIndex - 1]);
             redraw('night');
           }
         };
         if(nextBtn) nextBtn.onclick = () => {
           if(activeIndex < months.length - 1){
-            localStorage.setItem('adminNightMonth', months[activeIndex + 1]);
+            window.AppPrefs.set('adminNightMonth', months[activeIndex + 1]);
             redraw('night');
           }
         };
@@ -1971,7 +1975,7 @@ function chipForOwner(state, ownerId, kind=''){
     const nights = state.draftNightManual || [];
     if(!nights.length) return `<div class="card"><strong>No night call draft yet.</strong></div>`;
     const months = Array.from(new Set(nights.map(n => n.date.slice(0,7)))).sort();
-    const storedMonth = localStorage.getItem('adminNightMonth') || '';
+    const storedMonth = window.AppPrefs.get('adminNightMonth') || '';
     const activeMonth = months.includes(storedMonth) ? storedMonth : (months[0] || '');
     const activeIndex = Math.max(0, months.indexOf(activeMonth));
     const month = months[activeIndex];
@@ -2137,8 +2141,8 @@ function chipForOwner(state, ownerId, kind=''){
 
   function selectedFairnessRange(state, storagePrefix){
     const defaults = defaultFairnessRange(state);
-    const start = localStorage.getItem(`${storagePrefix}FairnessStart`) || defaults.start || '';
-    const end = localStorage.getItem(`${storagePrefix}FairnessEnd`) || defaults.end || '';
+    const start = window.AppPrefs.get(`${storagePrefix}FairnessStart`) || defaults.start || '';
+    const end = window.AppPrefs.get(`${storagePrefix}FairnessEnd`) || defaults.end || '';
     return { start, end };
   }
 
@@ -2182,11 +2186,11 @@ function chipForOwner(state, ownerId, kind=''){
     const startEl = el('#fairnessStartDate');
     const endEl = el('#fairnessEndDate');
     if(startEl) startEl.onchange = () => {
-      localStorage.setItem(`${storagePrefix}FairnessStart`, startEl.value || '');
+      window.AppPrefs.set(`${storagePrefix}FairnessStart`, startEl.value || '');
       if(typeof rerender === 'function') rerender();
     };
     if(endEl) endEl.onchange = () => {
-      localStorage.setItem(`${storagePrefix}FairnessEnd`, endEl.value || '');
+      window.AppPrefs.set(`${storagePrefix}FairnessEnd`, endEl.value || '');
       if(typeof rerender === 'function') rerender();
     };
   }
@@ -2544,16 +2548,16 @@ function renderOverrides(state){
 
   function renderPhysician(){
     const state = S();
-    const currentId = (localStorage.getItem('schedPhysicianSelected') || state.physicians[0].id);
+    const currentId = (window.AppPrefs.get('schedPhysicianSelected') || state.physicians[0].id);
     const tabs = [['schedule','Master Schedule'],['calls','Night Call'],['request','Submit Request'],['history','Request History']].map((x,i)=>({key:x[0],label:x[1],active:i===0}));
     getPortalBase('Physician Portal','View assignments and submit requests',tabs,'Physician Details');
     el('#topActions').innerHTML = `<div class="top-inputs"><label>Physician</label><select id="physicianSelect">${state.physicians.map(p => `<option value="${p.id}" ${p.id===currentId?'selected':''}>${p.name}</option>`).join('')}</select></div>`;
     renderPhysicianSummaryBar(currentId);
     let active='schedule';
     attachTabBehavior(tab => { active=tab; draw(); });
-    el('#physicianSelect').onchange = e => { localStorage.setItem('schedPhysicianSelected', e.target.value); renderPhysician(); };
+    el('#physicianSelect').onchange = e => { window.AppPrefs.set('schedPhysicianSelected', e.target.value); renderPhysician(); };
     function draw(){
-      const fresh = S(); const pid = localStorage.getItem('schedPhysicianSelected') || currentId;
+      const fresh = S(); const pid = window.AppPrefs.get('schedPhysicianSelected') || currentId;
       if(active==='schedule'){
         el('#mainContent').innerHTML = renderPhysicianSchedule(fresh,pid);
         el('#inspectorContent').innerHTML = renderPhysicianInspector(fresh,pid);
@@ -2627,7 +2631,7 @@ function renderOverrides(state){
 
   function renderLocum(){
     const state = S();
-    const currentId = localStorage.getItem('schedLocumSelected') || state.locums[0].id;
+    const currentId = window.AppPrefs.get('schedLocumSelected') || state.locums[0].id;
     const tabs = [['coverage','Coverage Weeks'],['calls','Call Dates'],['weekends','Weekend Dates'],['summary','Summary']].map((x,i)=>({key:x[0],label:x[1],active:i===0}));
     getPortalBase('Locum Portal','Set weekly coverage and explicit call availability',tabs,'Locum Details');
     const selected = state.locums.find(l => l.id === currentId) || state.locums[0];
@@ -2635,9 +2639,9 @@ function renderOverrides(state){
     renderLocumSummaryBar(selected);
     let active='coverage';
     attachTabBehavior(tab => { active=tab; draw(); });
-    el('#locumSelect').onchange = e => { localStorage.setItem('schedLocumSelected', e.target.value); renderLocum(); };
+    el('#locumSelect').onchange = e => { window.AppPrefs.set('schedLocumSelected', e.target.value); renderLocum(); };
     function draw(){
-      const fresh = S(); const loc = fresh.locums.find(l => l.id === (localStorage.getItem('schedLocumSelected') || currentId)) || fresh.locums[0];
+      const fresh = S(); const loc = fresh.locums.find(l => l.id === (window.AppPrefs.get('schedLocumSelected') || currentId)) || fresh.locums[0];
       if(active==='coverage'){
         el('#mainContent').innerHTML = renderLocumCoverageEditor(fresh, loc);
         el('#inspectorContent').innerHTML = '<div class="detail-box">Choose General Locum or Covering for Specific Physician, then select which service(s) you can cover for each week.</div>';

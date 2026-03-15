@@ -873,21 +873,21 @@ function renderOverrides(state){
 
   function renderPhysician(){
     const state = S();
-    const currentId = (localStorage.getItem('schedPhysicianSelected') || state.physicians[0].id);
+    const currentId = (window.AppPrefs.get('schedPhysicianSelected') || state.physicians[0].id);
     const tabs = [['schedule','Master Schedule'],['calls','Night Call'],['request','Submit Request'],['history','Request History']].map((x,i)=>({key:x[0],label:x[1],active:i===0}));
     getPortalBase('Physician Portal','View assignments and submit requests',tabs,null);
     const inspector = document.querySelector('.inspector'); if(inspector) inspector.remove();
     const shell = document.querySelector('.page-shell'); if(shell) shell.style.gridTemplateColumns = '240px minmax(0,1fr)';
-    const myWeeksOnly = localStorage.getItem('physMyWeeksOnly') === '1';
+    const myWeeksOnly = window.AppPrefs.get('physMyWeeksOnly') === '1';
     el('#topActions').innerHTML = `<div class="top-inputs"><label>Physician</label><select id="physicianSelect">${state.physicians.map(p => `<option value="${p.id}" ${p.id===currentId?'selected':''}>${p.name}</option>`).join('')}</select><label style="display:inline-flex;align-items:center;gap:8px;margin-left:8px"><input type="checkbox" id="physMyWeeksOnly" ${myWeeksOnly?'checked':''}> My Weeks Only</label></div>`;
     renderPhysicianSummaryBar(currentId);
-    let active = localStorage.getItem('physActiveTab') || 'schedule';
-    attachTabBehavior(tab => { active=tab; localStorage.setItem('physActiveTab', tab); draw(); });
+    let active = window.AppPrefs.get('physActiveTab') || 'schedule';
+    attachTabBehavior(tab => { active=tab; window.AppPrefs.set('physActiveTab', tab); draw(); });
     setTimeout(() => { const btn = el(`.side-nav button[data-tab="${active}"]`); if(btn) btn.click(); }, 0);
-    el('#physicianSelect').onchange = e => { localStorage.setItem('schedPhysicianSelected', e.target.value); renderPhysician(); };
-    if(el('#physMyWeeksOnly')) el('#physMyWeeksOnly').onchange = e => { localStorage.setItem('physMyWeeksOnly', e.target.checked ? '1' : '0'); renderPhysician(); const tab=el('.side-nav button[data-tab="schedule"]'); if(tab) tab.click(); };
+    el('#physicianSelect').onchange = e => { window.AppPrefs.set('schedPhysicianSelected', e.target.value); renderPhysician(); };
+    if(el('#physMyWeeksOnly')) el('#physMyWeeksOnly').onchange = e => { window.AppPrefs.set('physMyWeeksOnly', e.target.checked ? '1' : '0'); renderPhysician(); const tab=el('.side-nav button[data-tab="schedule"]'); if(tab) tab.click(); };
     function draw(){
-      const fresh = S(); const pid = localStorage.getItem('schedPhysicianSelected') || currentId;
+      const fresh = S(); const pid = window.AppPrefs.get('schedPhysicianSelected') || currentId;
       if(active==='schedule'){
         el('#mainContent').innerHTML = renderPhysicianSchedule(fresh,pid);
         
@@ -902,7 +902,7 @@ function renderOverrides(state){
         el('#mainContent').innerHTML = renderPhysicianHistory(fresh,pid);
         els('[data-cancel-request]').forEach(btn => btn.addEventListener('click', () => {
           window.AppState.removeRequest(btn.dataset.cancelRequest);
-          localStorage.setItem('physActiveTab', 'history');
+          window.AppPrefs.set('physActiveTab', 'history');
           renderPhysician();
         }));
       }
@@ -929,7 +929,7 @@ function renderOverrides(state){
     const baseWeeks = (state.publishedWeeks?.length ? state.publishedWeeks : state.draftWeeks) || [];
     if(!baseWeeks.length) return `<div class="card"><strong>No schedule available yet.</strong></div>`;
     const cols = ['ICU','GIM','CAR1','CAR2','Resp','Nephro','OP1','OP2','OP3','Echo','Weekend'];
-    const myWeeksOnly = localStorage.getItem('physMyWeeksOnly') === '1';
+    const myWeeksOnly = window.AppPrefs.get('physMyWeeksOnly') === '1';
     const weeks = myWeeksOnly
       ? baseWeeks.filter(w => cols.some(service => {
           const owner = service === 'Weekend' ? w.weekendOwner : w.services[service];
@@ -999,7 +999,7 @@ function renderOverrides(state){
     const start = state.settings.scheduleStart || window.SchedulerEngine.iso(new Date());
     const end = state.settings.scheduleEnd || window.SchedulerEngine.iso(window.SchedulerEngine.addDays(window.SchedulerEngine.parseDate(start), 90));
     const months = monthKeysBetween(start, end);
-    const currentMonth = localStorage.getItem('physReqMonth') || months[0];
+    const currentMonth = window.AppPrefs.get('physReqMonth') || months[0];
     return `<div class="card">
       <div class="section-title"><h2>Submit Request</h2></div>
       <div class="selector-grid physician-request-top">
@@ -1080,19 +1080,19 @@ function renderOverrides(state){
       applyVisuals();
     });
 
-    const currentMonth = localStorage.getItem('physReqMonth') || months[0];
+    const currentMonth = window.AppPrefs.get('physReqMonth') || months[0];
     const idx = months.indexOf(currentMonth);
 
     el('#physPrevMonth').onclick = () => {
       const nextIdx = Math.max(0, idx - 1);
-      localStorage.setItem('physReqMonth', months[nextIdx]);
-      localStorage.setItem('physActiveTab', 'request');
+      window.AppPrefs.set('physReqMonth', months[nextIdx]);
+      window.AppPrefs.set('physActiveTab', 'request');
       renderPhysician();
     };
     el('#physNextMonth').onclick = () => {
       const nextIdx = Math.min(months.length - 1, idx + 1);
-      localStorage.setItem('physReqMonth', months[nextIdx]);
-      localStorage.setItem('physActiveTab', 'request');
+      window.AppPrefs.set('physReqMonth', months[nextIdx]);
+      window.AppPrefs.set('physActiveTab', 'request');
       renderPhysician();
     };
 
@@ -1117,7 +1117,7 @@ function renderOverrides(state){
         createdAt:new Date().toISOString()
       });
       alert('Request saved.');
-      localStorage.setItem('physActiveTab', 'request');
+      window.AppPrefs.set('physActiveTab', 'request');
       renderPhysician();
     };
 
@@ -1126,7 +1126,7 @@ function renderOverrides(state){
 
   function renderLocum(){
     const state = S();
-    const currentId = localStorage.getItem('schedLocumSelected') || state.locums[0].id;
+    const currentId = window.AppPrefs.get('schedLocumSelected') || state.locums[0].id;
     const tabs = [['coverage','Coverage Weeks'],['calls','Call Dates'],['weekends','Weekend Dates'],['summary','Summary']].map((x,i)=>({key:x[0],label:x[1],active:i===0}));
     getPortalBase('Locum Portal','Set weekly coverage and explicit call availability',tabs,'Locum Details');
     const selected = state.locums.find(l => l.id === currentId) || state.locums[0];
@@ -1134,7 +1134,7 @@ function renderOverrides(state){
     renderLocumSummaryBar(selected);
     let active='coverage';
     attachTabBehavior(tab => { active=tab; draw(); });
-    el('#locumSelect').onchange = e => { localStorage.setItem('schedLocumSelected', e.target.value); renderLocum(); };
+    el('#locumSelect').onchange = e => { window.AppPrefs.set('schedLocumSelected', e.target.value); renderLocum(); };
     if(el('#saveLocumInitials')) el('#saveLocumInitials').onclick = () => {
       const value = (el('#locumInitials')?.value || '').toUpperCase().replace(/[^A-Z]/g,'').slice(0,4);
       window.AppState.saveLocum(selected.id, { initials:value });
@@ -1142,7 +1142,7 @@ function renderOverrides(state){
       renderLocum();
     };
     function draw(){
-      const fresh = S(); const loc = fresh.locums.find(l => l.id === (localStorage.getItem('schedLocumSelected') || currentId)) || fresh.locums[0];
+      const fresh = S(); const loc = fresh.locums.find(l => l.id === (window.AppPrefs.get('schedLocumSelected') || currentId)) || fresh.locums[0];
       if(active==='coverage'){
         el('#mainContent').innerHTML = renderLocumCoverageEditor(fresh, loc);
         
@@ -1209,7 +1209,7 @@ function renderOverrides(state){
     const start = state.settings.scheduleStart || weeks[0]?.weekStart || window.SchedulerEngine.iso(new Date());
     const end = state.settings.scheduleEnd || weeks[weeks.length-1]?.weekEnd || window.SchedulerEngine.iso(window.SchedulerEngine.addDays(new Date(),56));
     const monthKeys = monthKeysBetween(start, end);
-    const currentMonth = localStorage.getItem('locCoverageMonth') || monthKeys[0];
+    const currentMonth = window.AppPrefs.get('locCoverageMonth') || monthKeys[0];
     const selectedMap = Object.fromEntries((loc.weeklyCoverage||[]).map(x => [x.weekStart, x.services || []]));
     const weekByDate = {};
     weeks.forEach(w => {
@@ -1252,7 +1252,7 @@ function renderOverrides(state){
     const start = state.settings.scheduleStart || weeks[0]?.weekStart || window.SchedulerEngine.iso(new Date());
     const end = state.settings.scheduleEnd || weeks[weeks.length-1]?.weekEnd || window.SchedulerEngine.iso(window.SchedulerEngine.addDays(new Date(),56));
     const monthKeys = monthKeysBetween(start, end);
-    const currentMonth = localStorage.getItem('locCoverageMonth') || monthKeys[0];
+    const currentMonth = window.AppPrefs.get('locCoverageMonth') || monthKeys[0];
     const currentIdx = monthKeys.indexOf(currentMonth);
     const loc = state.locums.find(l => l.id === locumId);
     const selectedMap = Object.fromEntries((loc.weeklyCoverage||[]).map(x => [x.weekStart, new Set(x.services||[])]));
@@ -1267,12 +1267,12 @@ function renderOverrides(state){
     const typeSel = el('#locumGeneralType'); if(typeSel) typeSel.onchange = () => renderLocum();
     if(el('#locCovPrevMonth')) el('#locCovPrevMonth').onclick = () => {
       const nextIdx = Math.max(0, currentIdx - 1);
-      localStorage.setItem('locCoverageMonth', monthKeys[nextIdx]);
+      window.AppPrefs.set('locCoverageMonth', monthKeys[nextIdx]);
       renderLocum(); const tab=el('.side-nav button[data-tab="coverage"]'); if(tab) tab.click();
     };
     if(el('#locCovNextMonth')) el('#locCovNextMonth').onclick = () => {
       const nextIdx = Math.min(monthKeys.length - 1, currentIdx + 1);
-      localStorage.setItem('locCoverageMonth', monthKeys[nextIdx]);
+      window.AppPrefs.set('locCoverageMonth', monthKeys[nextIdx]);
       renderLocum(); const tab=el('.side-nav button[data-tab="coverage"]'); if(tab) tab.click();
     };
     function redrawSelections(){
@@ -1320,7 +1320,7 @@ function renderOverrides(state){
     const start = state.settings.scheduleStart || window.SchedulerEngine.iso(new Date());
     const end = state.settings.scheduleEnd || window.SchedulerEngine.iso(window.SchedulerEngine.addDays(window.SchedulerEngine.parseDate(start), 56));
     const monthKeys = monthKeysBetween(start, end);
-    const currentMonth = localStorage.getItem('locCallMonth') || monthKeys[0];
+    const currentMonth = window.AppPrefs.get('locCallMonth') || monthKeys[0];
     const selected = new Set(loc.callDates || []);
     return `<div class="card">
       <div class="section-title"><h2>Weekday Call Dates</h2>
@@ -1347,7 +1347,7 @@ function renderOverrides(state){
     const start = state.settings.scheduleStart || window.SchedulerEngine.iso(new Date());
     const end = state.settings.scheduleEnd || window.SchedulerEngine.iso(window.SchedulerEngine.addDays(window.SchedulerEngine.parseDate(start), 56));
     const monthKeys = monthKeysBetween(start, end);
-    const currentMonth = localStorage.getItem('locCallMonth') || monthKeys[0];
+    const currentMonth = window.AppPrefs.get('locCallMonth') || monthKeys[0];
     const currentIdx = monthKeys.indexOf(currentMonth);
     const selection = { singles:new Set((S().locums.find(l => l.id===locumId)?.callDates)||[]) };
     function redraw(){ els('[data-loc-call]').forEach(btn => { const d = btn.dataset.locCall; btn.classList.toggle('single-selected', selection.singles.has(d)); }); }
@@ -1355,12 +1355,12 @@ function renderOverrides(state){
     redraw();
     if(el('#locCallPrevMonth')) el('#locCallPrevMonth').onclick = () => {
       const nextIdx = Math.max(0, currentIdx - 1);
-      localStorage.setItem('locCallMonth', monthKeys[nextIdx]);
+      window.AppPrefs.set('locCallMonth', monthKeys[nextIdx]);
       renderLocum(); const tab=el('.side-nav button[data-tab="calls"]'); if(tab) tab.click();
     };
     if(el('#locCallNextMonth')) el('#locCallNextMonth').onclick = () => {
       const nextIdx = Math.min(monthKeys.length - 1, currentIdx + 1);
-      localStorage.setItem('locCallMonth', monthKeys[nextIdx]);
+      window.AppPrefs.set('locCallMonth', monthKeys[nextIdx]);
       renderLocum(); const tab=el('.side-nav button[data-tab="calls"]'); if(tab) tab.click();
     };
     el('#clearCallDates').onclick = () => { selection.singles.clear(); redraw(); };
@@ -1370,7 +1370,7 @@ function renderOverrides(state){
     const start = state.settings.scheduleStart || window.SchedulerEngine.iso(new Date());
     const end = state.settings.scheduleEnd || window.SchedulerEngine.iso(window.SchedulerEngine.addDays(window.SchedulerEngine.parseDate(start), 56));
     const monthKeys = monthKeysBetween(start, end);
-    const currentMonth = localStorage.getItem('locWeekendMonth') || monthKeys[0];
+    const currentMonth = window.AppPrefs.get('locWeekendMonth') || monthKeys[0];
     const selected = new Set(loc.weekendDates || []);
     return `<div class="card">
       <div class="section-title"><h2>Weekend Call Dates</h2>
@@ -1404,7 +1404,7 @@ function renderOverrides(state){
     const start = state.settings.scheduleStart || window.SchedulerEngine.iso(new Date());
     const end = state.settings.scheduleEnd || window.SchedulerEngine.iso(window.SchedulerEngine.addDays(window.SchedulerEngine.parseDate(start), 56));
     const monthKeys = monthKeysBetween(start, end);
-    const currentMonth = localStorage.getItem('locWeekendMonth') || monthKeys[0];
+    const currentMonth = window.AppPrefs.get('locWeekendMonth') || monthKeys[0];
     const currentIdx = monthKeys.indexOf(currentMonth);
     const selection = { singles:new Set((S().locums.find(l => l.id===locumId)?.weekendDates)||[]) };
     function redraw(){ els('[data-loc-weekend]').forEach(btn => { const d = btn.dataset.locWeekend; if(!d) return; btn.classList.toggle('range-selected', selection.singles.has(d)); }); }
@@ -1412,12 +1412,12 @@ function renderOverrides(state){
     redraw();
     if(el('#locWeekendPrevMonth')) el('#locWeekendPrevMonth').onclick = () => {
       const nextIdx = Math.max(0, currentIdx - 1);
-      localStorage.setItem('locWeekendMonth', monthKeys[nextIdx]);
+      window.AppPrefs.set('locWeekendMonth', monthKeys[nextIdx]);
       renderLocum(); const tab=el('.side-nav button[data-tab="weekends"]'); if(tab) tab.click();
     };
     if(el('#locWeekendNextMonth')) el('#locWeekendNextMonth').onclick = () => {
       const nextIdx = Math.min(monthKeys.length - 1, currentIdx + 1);
-      localStorage.setItem('locWeekendMonth', monthKeys[nextIdx]);
+      window.AppPrefs.set('locWeekendMonth', monthKeys[nextIdx]);
       renderLocum(); const tab=el('.side-nav button[data-tab="weekends"]'); if(tab) tab.click();
     };
     el('#clearWeekendDates').onclick = () => { selection.singles.clear(); redraw(); };
