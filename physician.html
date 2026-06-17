@@ -279,17 +279,16 @@ thead .service-header{color:#fff!important}
 .night-month-nav .month-label{font-weight:700}
 
 
-/* Robust physician request calendar scrolling for GitHub Pages/mobile browsers */
-html,
+/* Physician request calendar scroll/nav fix - June 2026 */
 body[data-page="physician"]{
+  min-height:100vh !important;
   height:auto !important;
-  min-height:100% !important;
   overflow-y:auto !important;
   -webkit-overflow-scrolling:touch;
 }
 body[data-page="physician"] .page-shell{
-  height:auto !important;
   min-height:100vh !important;
+  height:auto !important;
   overflow:visible !important;
 }
 body[data-page="physician"] .main-panel,
@@ -298,30 +297,22 @@ body[data-page="physician"] #mainContent{
   min-height:0 !important;
   overflow:visible !important;
 }
-body[data-page="physician"] .physician-request-calendar{
-  max-height:70vh;
-  overflow-y:auto !important;
-  overflow-x:hidden;
+body[data-page="physician"] #physMonthCalendar{
+  max-height:none !important;
+  height:auto !important;
+  overflow:visible !important;
   -webkit-overflow-scrolling:touch;
-  overscroll-behavior:contain;
-  padding-right:6px;
 }
-body[data-page="physician"] .physician-request-calendar .month-card{
-  max-width:760px;
+body[data-page="physician"] .physician-request-month-nav{
+  display:flex;
+  gap:10px;
+  flex-wrap:wrap;
+  align-items:center;
 }
-body[data-page="physician"] .physician-save-row{
-  position:sticky;
-  bottom:0;
-  z-index:10;
-  padding:10px 0 0;
-  background:var(--panel);
+body[data-page="physician"] .physician-request-month-nav .detail-chip{
+  min-width:150px;
 }
-@media (max-width: 900px){
-  body[data-page="physician"] .physician-request-calendar{
-    max-height:none;
-    overflow:visible !important;
-  }
-}
+
 </style>
 <script src="./supabase.js"></script>
 </head>
@@ -2324,7 +2315,8 @@ function renderPhysicianSchedule(state,pid){
     const start = state.settings.scheduleStart || window.SchedulerEngine.iso(new Date());
     const end = state.settings.scheduleEnd || window.SchedulerEngine.iso(window.SchedulerEngine.addDays(window.SchedulerEngine.parseDate(start), 90));
     const months = monthKeysBetween(start, end);
-    const currentMonth = window.AppPrefs.get('physReqMonth') || months[0];
+    const storedReqMonth = window.AppPrefs.get('physReqMonth') || '';
+    const currentMonth = months.includes(storedReqMonth) ? storedReqMonth : months[0];
     return `<div class="card">
       <div class="section-title"><h2>Submit Request</h2></div>
       <div class="selector-grid physician-request-top">
@@ -2346,18 +2338,20 @@ function renderPhysicianSchedule(state,pid){
       <div style="margin-top:14px">
         <div class="section-title">
           <h2>Choose Dates</h2>
-          <div class="inline-actions">
-            <button class="btn" id="clearPhysRange">Clear Range</button>
+          <div class="inline-actions physician-request-month-nav">
+            <button class="btn" id="physPrevMonth" type="button">← Previous Month</button>
+            <div class="detail-chip">${safe(monthLabel(currentMonth))}</div>
+            <button class="btn" id="physNextMonth" type="button">Next Month →</button>
+            <button class="btn" id="clearPhysRange" type="button">Clear Range</button>
           </div>
         </div>
-        <div class="detail-box">Scroll the calendar, then click a start date and an end date. The selected request range will highlight across the calendar.</div>
-        <div id="physMonthCalendar" class="calendar-months physician-request-calendar" style="margin-top:14px">
-          ${months.map(monthKey => renderMonthCalendar(monthKey, (dateStr, day) => {
+        <div class="detail-box">Click a start date, then click an end date. The selected request range will highlight across the calendar.</div>
+        <div id="physMonthCalendar" class="calendar-months single-month" style="margin-top:14px">
+          ${renderMonthCalendar(currentMonth, (dateStr, day) => {
             const dt = new Date(dateStr+'T12:00:00');
             const weekend = [0,6].includes(dt.getDay());
-            const outsideRange = dateStr < start || dateStr > end;
-            return `<button type="button" class="day-cell clickable ${weekend ? 'weekend-muted' : ''}" data-phys-date="${dateStr}" ${outsideRange ? 'disabled' : ''}><span class="day-num">${day}</span></button>`;
-          })).join('')}
+            return `<button type="button" class="day-cell clickable ${weekend ? 'weekend-muted' : ''}" data-phys-date="${dateStr}"><span class="day-num">${day}</span></button>`;
+          })}
         </div>
       </div>
       <div class="inline-actions physician-save-row" style="margin-top:14px"><button class="btn primary" id="savePhysReq">Save Request</button></div>
@@ -2402,6 +2396,28 @@ function renderPhysicianSchedule(state,pid){
       }
       applyVisuals();
     });
+
+    const storedReqMonth = window.AppPrefs.get('physReqMonth') || '';
+    const currentMonth = months.includes(storedReqMonth) ? storedReqMonth : months[0];
+    const idx = Math.max(0, months.indexOf(currentMonth));
+
+    const prevMonthBtn = el('#physPrevMonth');
+    const nextMonthBtn = el('#physNextMonth');
+    if(prevMonthBtn) prevMonthBtn.disabled = idx <= 0;
+    if(nextMonthBtn) nextMonthBtn.disabled = idx >= months.length - 1;
+
+    el('#physPrevMonth').onclick = () => {
+      const nextIdx = Math.max(0, idx - 1);
+      window.AppPrefs.set('physReqMonth', months[nextIdx]);
+      window.AppPrefs.set('physActiveTab', 'request');
+      renderPhysician();
+    };
+    el('#physNextMonth').onclick = () => {
+      const nextIdx = Math.min(months.length - 1, idx + 1);
+      window.AppPrefs.set('physReqMonth', months[nextIdx]);
+      window.AppPrefs.set('physActiveTab', 'request');
+      renderPhysician();
+    };
 
     el('#clearPhysRange').onclick = () => {
       selection.start = '';
