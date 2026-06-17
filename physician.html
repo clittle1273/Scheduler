@@ -277,6 +277,54 @@ thead .service-header{color:#fff!important}
 .fit-master thead th.service-Weekend{color:#fff!important}
 .night-month-nav{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px}
 .night-month-nav .month-label{font-weight:700}
+
+
+/* Physician request calendar scroll fix */
+body[data-page="physician"]{
+  min-height:100vh;
+  overflow-y:auto;
+  -webkit-overflow-scrolling:touch;
+}
+body[data-page="physician"] .page-shell{
+  min-height:100vh;
+  height:auto;
+  overflow:visible;
+}
+body[data-page="physician"] .main-panel{
+  min-height:0;
+  overflow:visible;
+}
+body[data-page="physician"] #mainContent{
+  min-height:0;
+}
+body[data-page="physician"] #physMonthCalendar{
+  max-height:calc(100vh - 340px);
+  min-height:320px;
+  overflow-y:auto;
+  -webkit-overflow-scrolling:touch;
+  overscroll-behavior:contain;
+  padding-right:4px;
+}
+body[data-page="physician"] #physMonthCalendar .month-card{
+  margin-bottom:12px;
+}
+body[data-page="physician"] .physician-save-row{
+  position:sticky;
+  bottom:0;
+  z-index:5;
+  padding:10px 0 0;
+  background:var(--panel);
+}
+@media (max-width: 900px){
+  body[data-page="physician"] #physMonthCalendar{
+    max-height:65vh;
+    min-height:300px;
+  }
+  body[data-page="physician"] .physician-save-row{
+    padding-bottom:8px;
+  }
+}
+
 </style>
 <script src="./supabase.js"></script>
 </head>
