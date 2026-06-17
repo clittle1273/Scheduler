@@ -277,42 +277,6 @@ thead .service-header{color:#fff!important}
 .fit-master thead th.service-Weekend{color:#fff!important}
 .night-month-nav{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px}
 .night-month-nav .month-label{font-weight:700}
-
-
-/* Physician request calendar scroll/nav fix - June 2026 */
-body[data-page="physician"]{
-  min-height:100vh !important;
-  height:auto !important;
-  overflow-y:auto !important;
-  -webkit-overflow-scrolling:touch;
-}
-body[data-page="physician"] .page-shell{
-  min-height:100vh !important;
-  height:auto !important;
-  overflow:visible !important;
-}
-body[data-page="physician"] .main-panel,
-body[data-page="physician"] #mainContent{
-  height:auto !important;
-  min-height:0 !important;
-  overflow:visible !important;
-}
-body[data-page="physician"] #physMonthCalendar{
-  max-height:none !important;
-  height:auto !important;
-  overflow:visible !important;
-  -webkit-overflow-scrolling:touch;
-}
-body[data-page="physician"] .physician-request-month-nav{
-  display:flex;
-  gap:10px;
-  flex-wrap:wrap;
-  align-items:center;
-}
-body[data-page="physician"] .physician-request-month-nav .detail-chip{
-  min-width:150px;
-}
-
 </style>
 <script src="./supabase.js"></script>
 </head>
@@ -2313,10 +2277,16 @@ function renderPhysicianSchedule(state,pid){
   }
   function renderPhysicianRequestForm(state,pid){
     const start = state.settings.scheduleStart || window.SchedulerEngine.iso(new Date());
-    const end = state.settings.scheduleEnd || window.SchedulerEngine.iso(window.SchedulerEngine.addDays(window.SchedulerEngine.parseDate(start), 90));
+    const end = state.settings.scheduleEnd || window.SchedulerEngine.iso(window.SchedulerEngine.addDays(window.SchedulerEngine.parseDate(start), 365));
     const months = monthKeysBetween(start, end);
-    const storedReqMonth = window.AppPrefs.get('physReqMonth') || '';
-    const currentMonth = months.includes(storedReqMonth) ? storedReqMonth : months[0];
+    const savedMonth = window.AppPrefs.get('physReqMonth') || months[0];
+    const currentMonth = months.includes(savedMonth) ? savedMonth : months[0];
+    const monthHtml = months.map(monthKey => renderMonthCalendar(monthKey, (dateStr, day) => {
+      const dt = new Date(dateStr+'T12:00:00');
+      const weekend = [0,6].includes(dt.getDay());
+      const outsideRange = dateStr < start || dateStr > end;
+      return `<button type="button" class="day-cell ${outsideRange ? 'disabled' : 'clickable'} ${weekend ? 'weekend-muted' : ''}" data-phys-date="${dateStr}" ${outsideRange ? 'disabled' : ''}><span class="day-num">${day}</span></button>`;
+    }).replace('class="month-card"', `class="month-card" data-phys-month="${monthKey}"`)).join('');
     return `<div class="card">
       <div class="section-title"><h2>Submit Request</h2></div>
       <div class="selector-grid physician-request-top">
@@ -2338,29 +2308,25 @@ function renderPhysicianSchedule(state,pid){
       <div style="margin-top:14px">
         <div class="section-title">
           <h2>Choose Dates</h2>
-          <div class="inline-actions physician-request-month-nav">
+          <div class="inline-actions">
             <button class="btn" id="physPrevMonth" type="button">← Previous Month</button>
-            <div class="detail-chip">${safe(monthLabel(currentMonth))}</div>
+            <div class="detail-chip" id="physReqMonthLabel">${safe(monthLabel(currentMonth))}</div>
             <button class="btn" id="physNextMonth" type="button">Next Month →</button>
             <button class="btn" id="clearPhysRange" type="button">Clear Range</button>
           </div>
         </div>
-        <div class="detail-box">Click a start date, then click an end date. The selected request range will highlight across the calendar.</div>
-        <div id="physMonthCalendar" class="calendar-months single-month" style="margin-top:14px">
-          ${renderMonthCalendar(currentMonth, (dateStr, day) => {
-            const dt = new Date(dateStr+'T12:00:00');
-            const weekend = [0,6].includes(dt.getDay());
-            return `<button type="button" class="day-cell clickable ${weekend ? 'weekend-muted' : ''}" data-phys-date="${dateStr}"><span class="day-num">${day}</span></button>`;
-          })}
+        <div class="detail-box">Scroll through the months below. Click a start date, then click an end date.</div>
+        <div id="physMonthCalendar" class="calendar-months physician-request-calendar" style="margin-top:14px;max-height:70vh;overflow-y:auto;padding-right:6px;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;">
+          ${monthHtml}
         </div>
       </div>
-      <div class="inline-actions physician-save-row" style="margin-top:14px"><button class="btn primary" id="savePhysReq">Save Request</button></div>
+      <div class="inline-actions physician-save-row" style="margin-top:14px"><button class="btn primary" id="savePhysReq" type="button">Save Request</button></div>
     </div>`;
   }
   function bindPhysicianRequestForm(pid){
     const state = S();
     const start = state.settings.scheduleStart || window.SchedulerEngine.iso(new Date());
-    const end = state.settings.scheduleEnd || window.SchedulerEngine.iso(window.SchedulerEngine.addDays(window.SchedulerEngine.parseDate(start), 90));
+    const end = state.settings.scheduleEnd || window.SchedulerEngine.iso(window.SchedulerEngine.addDays(window.SchedulerEngine.parseDate(start), 365));
     const months = monthKeysBetween(start, end);
     const selection = {start:'', end:'', range:[]};
 
@@ -2397,27 +2363,32 @@ function renderPhysicianSchedule(state,pid){
       applyVisuals();
     });
 
-    const storedReqMonth = window.AppPrefs.get('physReqMonth') || '';
-    const currentMonth = months.includes(storedReqMonth) ? storedReqMonth : months[0];
-    const idx = Math.max(0, months.indexOf(currentMonth));
-
-    const prevMonthBtn = el('#physPrevMonth');
-    const nextMonthBtn = el('#physNextMonth');
-    if(prevMonthBtn) prevMonthBtn.disabled = idx <= 0;
-    if(nextMonthBtn) nextMonthBtn.disabled = idx >= months.length - 1;
+    let currentMonth = window.AppPrefs.get('physReqMonth') || months[0];
+    if(!months.includes(currentMonth)) currentMonth = months[0];
+    function setActiveMonth(monthKey, shouldScroll=true){
+      if(!months.includes(monthKey)) return;
+      currentMonth = monthKey;
+      window.AppPrefs.set('physReqMonth', monthKey);
+      const label = el('#physReqMonthLabel');
+      if(label) label.textContent = monthLabel(monthKey);
+      const idxNow = months.indexOf(monthKey);
+      const prev = el('#physPrevMonth');
+      const next = el('#physNextMonth');
+      if(prev) prev.disabled = idxNow <= 0;
+      if(next) next.disabled = idxNow >= months.length - 1;
+      const card = document.querySelector(`[data-phys-month="${monthKey}"]`);
+      if(card && shouldScroll) card.scrollIntoView({block:'start', behavior:'smooth'});
+    }
 
     el('#physPrevMonth').onclick = () => {
-      const nextIdx = Math.max(0, idx - 1);
-      window.AppPrefs.set('physReqMonth', months[nextIdx]);
-      window.AppPrefs.set('physActiveTab', 'request');
-      renderPhysician();
+      const idx = months.indexOf(currentMonth);
+      setActiveMonth(months[Math.max(0, idx - 1)]);
     };
     el('#physNextMonth').onclick = () => {
-      const nextIdx = Math.min(months.length - 1, idx + 1);
-      window.AppPrefs.set('physReqMonth', months[nextIdx]);
-      window.AppPrefs.set('physActiveTab', 'request');
-      renderPhysician();
+      const idx = months.indexOf(currentMonth);
+      setActiveMonth(months[Math.min(months.length - 1, idx + 1)]);
     };
+    setActiveMonth(currentMonth, false);
 
     el('#clearPhysRange').onclick = () => {
       selection.start = '';
