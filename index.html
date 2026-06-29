@@ -2032,7 +2032,24 @@ function chipForOwner(state, ownerId, kind=''){
       else if(PAGE==='locum') renderLocum();
       else if(PAGE==='mobile') renderMobile();
       else renderIndex();
-      window.SchedulerCloud?.startPolling?.('schedulerRebuildStateV13', () => location.reload());
+      window.SchedulerCloud?.startPolling?.('schedulerRebuildStateV13', () => {
+        // Do not hard reload on cloud sync. Reloading was resetting the physician selector
+        // back to the default and jumping the user to the top while they were filling requests.
+        const y = window.scrollY || 0;
+        const activePhysician = document.querySelector('#physicianSelect')?.value;
+        if(activePhysician) window.AppPrefs?.set?.('schedPhysicianSelected', activePhysician);
+        const activeLocum = document.querySelector('#locumSelect')?.value;
+        if(activeLocum) window.AppPrefs?.set?.('schedLocumSelected', activeLocum);
+        const activeTab = window.AppPrefs?.get?.('physActiveTab') || '';
+        // When a physician is actively entering a request, leave the form alone.
+        if(PAGE === 'physician' && activeTab === 'request') return;
+        if(PAGE==='admin') renderAdmin();
+        else if(PAGE==='physician') renderPhysician();
+        else if(PAGE==='locum') renderLocum();
+        else if(PAGE==='mobile') renderMobile();
+        else if(PAGE==='index') renderIndex();
+        requestAnimationFrame(() => window.scrollTo(0, y));
+      });
     }catch(err){
       console.error(err);
       document.body.innerHTML = `<div class="home-shell"><div class="brand">Department Scheduling</div><p class="subtitle">The page failed to render.</p><pre class="card">${safe(err.stack || String(err))}</pre></div>`;
