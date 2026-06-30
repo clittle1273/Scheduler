@@ -188,7 +188,6 @@
         generatedSummary: { ...base.generatedSummary, ...(parsed.generatedSummary || {}) }
       };
       applyOneTimeFreshReset(merged);
-      saveState(merged);
       return merged;
     }catch(err){
       console.error('loadState failed', err);
@@ -196,14 +195,12 @@
       if(boot && typeof boot === 'object'){
         try{
           const cloned = deepClone(boot);
-          saveState(cloned);
           return cloned;
         }catch(innerErr){
           console.error('loadState boot fallback failed', innerErr);
         }
       }
       const init = defaultState();
-      saveState(init);
       return init;
     }
   }

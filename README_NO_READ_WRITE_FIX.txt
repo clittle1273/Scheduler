@@ -1,0 +1,1 @@
+Emergency fix: loadState/read/render no longer writes scheduler state back to Supabase. This prevents polling/renders from overwriting newer requests. Writes still occur through explicit AppState update actions such as request submit, locum save, generate/publish. Row remains global_v2_20260630.
