@@ -294,6 +294,13 @@ thead .service-Weekend{background:var(--svc-weekend)!important}
   }
   function deepClone(x){ return JSON.parse(JSON.stringify(x)); }
 
+  function mergeRequestsKeepNewest(existingRequests, incomingRequests){
+    const map = new Map();
+    (existingRequests || []).forEach(r => { if(r && r.id) map.set(r.id, r); });
+    (incomingRequests || []).forEach(r => { if(r && r.id) map.set(r.id, r); });
+    return Array.from(map.values()).sort((a,b) => String(a.startDate || '').localeCompare(String(b.startDate || '')) || String(a.createdAt || '').localeCompare(String(b.createdAt || '')));
+  }
+
   const physicians = [
     { id:'CL', name:'CL', type:'physician', services:['ICU','GIM','CAR1','CAR2','Echo','Weekend','Night','OP'], echoEligible:true, weekendEligible:true, nightEligible:true, opEligible:true,
       fairnessWeights:{ weeklyServices:1, icu:1, weekends:1, weekdayCall:1 } },
@@ -505,6 +512,15 @@ function loadState(){
   }
   function upsertRequest(req){
     return updateState(state => {
+      // Defensive merge: if this browser tab has stale local state, do not let it
+      // overwrite requests that are already in the cloud. This was most visible for CL
+      // because CL is the default selected physician.
+      try{
+        const cloud = window.SchedulerCloud?.getBootState?.();
+        if(cloud && Array.isArray(cloud.requests)){
+          state.requests = mergeRequestsKeepNewest(cloud.requests, state.requests || []);
+        }
+      }catch(e){}
       const idx = state.requests.findIndex(r => r.id === req.id);
       if(idx >= 0) state.requests[idx] = req;
       else state.requests.push(req);

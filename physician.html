@@ -333,6 +333,13 @@ thead .service-header{color:#fff!important}
   }
   function deepClone(x){ return JSON.parse(JSON.stringify(x)); }
 
+  function mergeRequestsKeepNewest(existingRequests, incomingRequests){
+    const map = new Map();
+    (existingRequests || []).forEach(r => { if(r && r.id) map.set(r.id, r); });
+    (incomingRequests || []).forEach(r => { if(r && r.id) map.set(r.id, r); });
+    return Array.from(map.values()).sort((a,b) => String(a.startDate || '').localeCompare(String(b.startDate || '')) || String(a.createdAt || '').localeCompare(String(b.createdAt || '')));
+  }
+
   const physicians = [
     { id:'CL', name:'CL', type:'physician', services:['ICU','GIM','CAR1','CAR2','Echo','Weekend','Night','OP'], echoEligible:true, weekendEligible:true, nightEligible:true, opEligible:true,
       fairnessWeights:{ weeklyServices:1, icu:1, weekends:1, weekdayCall:1 } },
@@ -533,6 +540,15 @@ thead .service-header{color:#fff!important}
   }
   function upsertRequest(req){
     return updateState(state => {
+      // Defensive merge: if this browser tab has stale local state, do not let it
+      // overwrite requests that are already in the cloud. This was most visible for CL
+      // because CL is the default selected physician.
+      try{
+        const cloud = window.SchedulerCloud?.getBootState?.();
+        if(cloud && Array.isArray(cloud.requests)){
+          state.requests = mergeRequestsKeepNewest(cloud.requests, state.requests || []);
+        }
+      }catch(e){}
       const idx = state.requests.findIndex(r => r.id === req.id);
       if(idx >= 0) state.requests[idx] = req;
       else state.requests.push(req);
@@ -2436,17 +2452,27 @@ function renderPhysicianSchedule(state,pid){
       const startDate = el('#physReqStart').value;
       const endDate = el('#physReqEnd').value || startDate;
       if(!startDate || !endDate) return alert('Choose a start and end date.');
-      window.AppState.upsertRequest({
+      const activePid = el('#physicianSelect')?.value || pid;
+      const req = {
         id:`req-${Date.now()}`,
-        personId:pid,
+        personId:activePid,
         type:el('#physReqType').value,
         startDate:startDate,
         endDate:endDate,
         status:'approved',
         createdAt:new Date().toISOString()
-      });
-      alert('Request saved.');
-      window.AppPrefs.set('physActiveTab', 'request');
+      };
+      window.AppState.upsertRequest(req);
+      try{
+        const key = `physRequestBackup_${activePid}`;
+        const prior = JSON.parse(localStorage.getItem(key) || '[]');
+        prior.push(req);
+        localStorage.setItem(key, JSON.stringify(prior.slice(-50)));
+      }catch(e){}
+      const saved = (window.AppState.loadState().requests || []).some(r => r.id === req.id && r.personId === activePid);
+      alert(saved ? 'Request saved.' : 'Request submitted, but could not verify local save. Check admin before closing this tab.');
+      window.AppPrefs.set('schedPhysicianSelected', activePid);
+      window.AppPrefs.set('physActiveTab', 'history');
       renderPhysician();
     };
 
