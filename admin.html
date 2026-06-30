@@ -537,19 +537,8 @@ function exportMasterPDF(){
 
   
   function applyOneTimeFreshReset(merged){
-    const marker = 'fresh_start_v1';
-    if(merged?.metadata?.buildResetMarker === marker) return merged;
-    merged.draftWeeks = [];
-    merged.publishedWeeks = [];
-    merged.draftNightManual = [];
-    merged.publishedNightManual = [];
-    merged.overrideLog = [];
-    merged.fairnessCarryForward = {};
-    merged.publishHistory = [];
-    merged.publishedArchives = [];
-    merged.currentPublishedArchiveId = '';
-    merged.generatedSummary = { fairnessSummary: [], validation: [] };
-    merged.metadata = { ...(merged.metadata || {}), lastGeneratedAt: null, lastPublishedAt: null, buildResetMarker: marker };
+    // Disabled after live deployment: this old one-time reset can wipe real requests
+    // when an older/empty cloud state is loaded. Preserve existing live data.
     return merged;
   }
 
@@ -620,8 +609,10 @@ function exportMasterPDF(){
         currentPublishedArchiveId: parsed.currentPublishedArchiveId || '',
         generatedSummary: { ...base.generatedSummary, ...(parsed.generatedSummary || {}) }
       };
-      applyOneTimeFreshReset(merged);
-      saveState(merged);
+      // IMPORTANT: never write back to Supabase/local storage during load.
+      // Loading pages should be read-only. Previously admin/physician refresh could
+      // merge a default/empty boot state and immediately save it, wiping requests.
+      // Explicit actions (save request, generate, publish, locum save) still write.
       return merged;
     }catch(err){
       console.error('loadState failed', err);
@@ -629,7 +620,6 @@ function exportMasterPDF(){
       if(boot && typeof boot === 'object'){
         try{
           const cloned = deepClone(boot);
-          saveState(cloned);
           return cloned;
         }catch(innerErr){
           console.error('loadState boot fallback failed', innerErr);
