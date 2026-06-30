@@ -1,0 +1,1 @@
+Fix: browser localStorage is re-enabled and merged with Supabase boot state so physician requests persist across refresh while still syncing to cloud. Upload all HTML files and keep your existing supabase.js.

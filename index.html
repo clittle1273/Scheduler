@@ -267,21 +267,52 @@ thead .service-Weekend{background:var(--svc-weekend)!important}
   let memoryFallback = null;
 
   function storageAvailable(){
-    return false;
+    try{
+      const testKey = STORAGE_KEY + '_test';
+      localStorage.setItem(testKey, '1');
+      localStorage.removeItem(testKey);
+      return true;
+    }catch(e){ return false; }
+  }
+  function mergeRequestArrays(a, b){
+    const map = new Map();
+    (a || []).forEach(r => { if(r && r.id) map.set(r.id, r); });
+    (b || []).forEach(r => { if(r && r.id) map.set(r.id, r); });
+    return Array.from(map.values());
   }
   function readRaw(){
-    if(memoryFallback != null) return memoryFallback;
+    let localRaw = null;
+    let bootRaw = null;
+    try{ if(storageAvailable()) localRaw = localStorage.getItem(STORAGE_KEY); }catch(e){}
     try{
       const boot = window.SchedulerCloud?.getBootState?.();
-      if(boot && typeof boot === 'object'){
-        memoryFallback = JSON.stringify(boot);
-        return memoryFallback;
-      }
+      if(boot && typeof boot === 'object') bootRaw = JSON.stringify(boot);
     }catch(e){}
+
+    // Prefer a merged state when both local browser storage and Supabase boot state exist.
+    // This prevents a fresh/empty cloud read from wiping requests that were just saved locally,
+    // while still allowing cloud data from other portals to come through.
+    if(localRaw && bootRaw){
+      try{
+        const localState = JSON.parse(localRaw) || {};
+        const bootState = JSON.parse(bootRaw) || {};
+        const merged = { ...localState, ...bootState };
+        merged.requests = mergeRequestArrays(localState.requests, bootState.requests);
+        if((localState.requests || []).length && !(bootState.requests || []).length){
+          merged.requests = localState.requests;
+        }
+        memoryFallback = JSON.stringify(merged);
+        return memoryFallback;
+      }catch(e){}
+    }
+    if(localRaw){ memoryFallback = localRaw; return localRaw; }
+    if(bootRaw){ memoryFallback = bootRaw; return bootRaw; }
+    if(memoryFallback != null) return memoryFallback;
     return null;
   }
   function writeRaw(value){
     memoryFallback = value;
+    try{ if(storageAvailable()) localStorage.setItem(STORAGE_KEY, value); }catch(e){}
     try{
       const parsed = JSON.parse(value);
       window.SchedulerCloud?.setBootState?.(parsed);
