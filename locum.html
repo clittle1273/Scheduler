@@ -315,13 +315,29 @@ thead .service-Weekend{background:var(--svc-weekend)!important}
     return null;
   }
   function writeRaw(value){
-    memoryFallback = value;
-    try{ if(storageAvailable()) localStorage.setItem(STORAGE_KEY, value); }catch(e){}
+    let finalValue = value;
     try{
-      const parsed = JSON.parse(value);
+      const outgoing = JSON.parse(value);
+      const cloud = window.SchedulerCloud?.getBootState?.();
+      if(cloud && typeof cloud === 'object'){
+        // Critical safety rule: never let an older/stale browser tab wipe requests.
+        // Every write preserves the union of existing cloud requests and outgoing requests.
+        // This protects all physicians, not just CL.
+        outgoing.requests = mergeRequestArrays(cloud.requests || [], outgoing.requests || []);
+      }
+      outgoing.metadata = outgoing.metadata || {};
+      outgoing.metadata.lastClientSaveAt = new Date().toISOString();
+      finalValue = JSON.stringify(outgoing);
+    }catch(e){
+      finalValue = value;
+    }
+    memoryFallback = finalValue;
+    try{ if(storageAvailable()) localStorage.setItem(STORAGE_KEY, finalValue); }catch(e){}
+    try{
+      const parsed = JSON.parse(finalValue);
       window.SchedulerCloud?.setBootState?.(parsed);
     }catch(e){}
-    try{ window.SchedulerCloud?.queuePush?.(STORAGE_KEY, value); }catch(e){}
+    try{ window.SchedulerCloud?.queuePush?.(STORAGE_KEY, finalValue); }catch(e){}
   }
   function deepClone(x){ return JSON.parse(JSON.stringify(x)); }
 
@@ -491,7 +507,7 @@ function loadState(){
         }
       }
       const init = defaultState();
-      saveState(init);
+      // Do not save defaults during a failed load. A failed/empty load must never wipe live requests.
       return init;
     }
   }
@@ -2166,6 +2182,8 @@ function chipForOwner(state, ownerId, kind=''){
 
   document.addEventListener('DOMContentLoaded', async () => {
     try{
+      let preHydrateRaw = null;
+      try{ preHydrateRaw = localStorage.getItem('schedulerRebuildStateV13'); }catch(e){}
       let hydrated = false;
       for(let attempt = 0; attempt < 3 && !hydrated; attempt += 1){
         hydrated = !!(await window.SchedulerCloud?.hydrateLocalState?.('schedulerRebuildStateV13'));
@@ -2173,6 +2191,18 @@ function chipForOwner(state, ownerId, kind=''){
           await new Promise(resolve => setTimeout(resolve, 300));
         }
       }
+      // If hydrate pulled an older cloud copy, restore a merged request list from the pre-hydrate browser copy.
+      try{
+        if(preHydrateRaw){
+          const before = JSON.parse(preHydrateRaw) || {};
+          const after = window.AppState.loadState();
+          const mergedRequests = mergeRequestArrays(before.requests || [], after.requests || []);
+          if(mergedRequests.length > (after.requests || []).length){
+            after.requests = mergedRequests;
+            window.AppState.saveState(after);
+          }
+        }
+      }catch(e){}
       if(PAGE==='index') renderIndex();
       else if(PAGE==='admin') renderAdmin();
       else if(PAGE==='physician') renderPhysician();
