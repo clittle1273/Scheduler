@@ -313,10 +313,7 @@ thead .service-header{color:#fff!important}
     return false;
   }
   function readRaw(){
-    // Always prefer the latest Supabase bootState over any older in-page memory copy.
-    // The prior order returned memoryFallback first, so after cloud polling updated
-    // bootState, a render/loadState cycle could still read stale memoryFallback
-    // and push that older scheduler state back to Supabase.
+    if(memoryFallback != null) return memoryFallback;
     try{
       const boot = window.SchedulerCloud?.getBootState?.();
       if(boot && typeof boot === 'object'){
@@ -324,7 +321,6 @@ thead .service-header{color:#fff!important}
         return memoryFallback;
       }
     }catch(e){}
-    if(memoryFallback != null) return memoryFallback;
     return null;
   }
   function writeRaw(value){
@@ -1931,7 +1927,8 @@ function chipForOwner(state, ownerId, kind=''){
 
   function renderPhysician(){
     const state = S();
-    const currentId = (window.AppPrefs.get('schedPhysicianSelected') || state.physicians[0].id);
+    const storedPhysicianId = window.AppPrefs.get('schedPhysicianSelected') || '';
+    const currentId = state.physicians.some(p => p.id === storedPhysicianId) ? storedPhysicianId : '';
     const tabs = [['myschedule','My Schedule'],['schedule','Published Schedule'],['calls','Night Call'],['request','Submit Request'],['history','Request History'],['yearlyfairness','Fairness']].map((x,i)=>({key:x[0],label:x[1],active:i===0}));
     getPortalBase('Physician Portal','View published schedules and submit requests',tabs,null);
     const inspector = document.querySelector('.inspector'); if(inspector) inspector.remove();
@@ -1941,12 +1938,19 @@ function chipForOwner(state, ownerId, kind=''){
     const selectedArchive = selectedArchiveForYear(state, year);
     if(selectedArchive) window.AppPrefs.set('physPublishedArchiveId', selectedArchive.id);
     const myWeeksOnly = window.AppPrefs.get('physMyWeeksOnly') === '1';
-    el('#topActions').innerHTML = `<div class="top-inputs"><label>Physician</label><select id="physicianSelect">${state.physicians.map(p => `<option value="${p.id}" ${p.id===currentId?'selected':''}>${p.name}</option>`).join('')}</select><label>Year</label><select id="physPortalYear">${availablePortalYears(state).map(y => `<option value="${y}" ${y===year?'selected':''}>${y}</option>`).join('')}</select><label>Schedule</label><select id="physScheduleSelect">${archives.length ? archives.map(a => `<option value="${a.id}" ${selectedArchive && a.id===selectedArchive.id?'selected':''}>${safe(archivePeriodLabel(a))}</option>`).join('') : `<option value="">No Published Schedule</option>`}</select><label style="display:inline-flex;align-items:center;gap:8px;margin-left:8px"><input type="checkbox" id="physMyWeeksOnly" ${myWeeksOnly?'checked':''}> My Weeks Only</label></div>`;
+    el('#topActions').innerHTML = `<div class="top-inputs"><label>Physician</label><select id="physicianSelect"><option value="" ${!currentId?'selected':''}>Select initials...</option>${state.physicians.map(p => `<option value="${p.id}" ${p.id===currentId?'selected':''}>${p.name}</option>`).join('')}</select><label>Year</label><select id="physPortalYear">${availablePortalYears(state).map(y => `<option value="${y}" ${y===year?'selected':''}>${y}</option>`).join('')}</select><label>Schedule</label><select id="physScheduleSelect">${archives.length ? archives.map(a => `<option value="${a.id}" ${selectedArchive && a.id===selectedArchive.id?'selected':''}>${safe(archivePeriodLabel(a))}</option>`).join('') : `<option value="">No Published Schedule</option>`}</select><label style="display:inline-flex;align-items:center;gap:8px;margin-left:8px"><input type="checkbox" id="physMyWeeksOnly" ${myWeeksOnly?'checked':''}> My Weeks Only</label></div>`;
     renderPhysicianSummaryBar(currentId);
     let active = window.AppPrefs.get('physActiveTab') || 'myschedule';
     attachTabBehavior(tab => { active=tab; window.AppPrefs.set('physActiveTab', tab); draw(); });
     setTimeout(() => { const btn = el(`.side-nav button[data-tab="${active}"]`); if(btn) btn.click(); }, 0);
-    el('#physicianSelect').onchange = e => { window.AppPrefs.set('schedPhysicianSelected', e.target.value); renderPhysician(); };
+    el('#physicianSelect').onchange = e => { if(e.target.value) window.AppPrefs.set('schedPhysicianSelected', e.target.value); else window.AppPrefs.remove('schedPhysicianSelected'); renderPhysician(); };
+    if(!currentId){
+      if(el('#summaryBar')) el('#summaryBar').innerHTML = '<div class="card"><strong>Select your initials first.</strong><div class="small">No physician is selected by default. This prevents accidental CL/default request changes.</div></div>';
+      if(el('#mainContent')) el('#mainContent').innerHTML = '<div class="card"><div class="section-title"><h2>Select your initials</h2></div><div class="detail-box">Choose your initials from the Physician dropdown before viewing or submitting requests.</div></div>';
+      if(el('#inspectorContent')) el('#inspectorContent').innerHTML = '<div class="detail-box">Waiting for physician selection.</div>';
+      return;
+    }
+
     if(el('#physPortalYear')) el('#physPortalYear').onchange = e => { window.AppPrefs.set('physPortalYear', e.target.value); window.AppPrefs.remove('physPublishedArchiveId'); renderPhysician(); };
     if(el('#physScheduleSelect')) el('#physScheduleSelect').onchange = e => { window.AppPrefs.set('physPublishedArchiveId', e.target.value); renderPhysician(); };
     if(el('#physMyWeeksOnly')) el('#physMyWeeksOnly').onchange = e => { window.AppPrefs.set('physMyWeeksOnly', e.target.checked ? '1' : '0'); renderPhysician(); const tab=el('.side-nav button[data-tab="schedule"]'); if(tab) tab.click(); };

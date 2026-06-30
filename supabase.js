@@ -16,14 +16,25 @@
 
   const prefStore = Object.create(null);
 
+  // Small persistent preference store for UI-only selections.
+  // Important: the selected physician must survive refreshes/cloud polling
+  // and must never silently fall back to CL. Use localStorage when available,
+  // with an in-memory fallback only for browsers that block storage.
   window.AppPrefs = window.AppPrefs || {
     get(key){
+      try {
+        const value = localStorage.getItem(key);
+        if(value !== null) return value;
+      } catch(e) {}
       return Object.prototype.hasOwnProperty.call(prefStore, key) ? prefStore[key] : null;
     },
     set(key, value){
-      prefStore[key] = String(value);
+      const stringValue = String(value);
+      try { localStorage.setItem(key, stringValue); } catch(e) { prefStore[key] = stringValue; }
+      prefStore[key] = stringValue;
     },
     remove(key){
+      try { localStorage.removeItem(key); } catch(e) {}
       delete prefStore[key];
     }
   };

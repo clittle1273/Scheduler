@@ -433,10 +433,7 @@ function exportMasterPDF(){
     return false;
   }
   function readRaw(){
-    // Always prefer the latest Supabase bootState over any older in-page memory copy.
-    // The prior order returned memoryFallback first, so after cloud polling updated
-    // bootState, a render/loadState cycle could still read stale memoryFallback
-    // and push that older scheduler state back to Supabase.
+    if(memoryFallback != null) return memoryFallback;
     try{
       const boot = window.SchedulerCloud?.getBootState?.();
       if(boot && typeof boot === 'object'){
@@ -444,7 +441,6 @@ function exportMasterPDF(){
         return memoryFallback;
       }
     }catch(e){}
-    if(memoryFallback != null) return memoryFallback;
     return null;
   }
   function writeRaw(value){
@@ -2560,14 +2556,22 @@ function renderOverrides(state){
 
   function renderPhysician(){
     const state = S();
-    const currentId = (window.AppPrefs.get('schedPhysicianSelected') || state.physicians[0].id);
+    const storedPhysicianId = window.AppPrefs.get('schedPhysicianSelected') || '';
+    const currentId = state.physicians.some(p => p.id === storedPhysicianId) ? storedPhysicianId : '';
     const tabs = [['schedule','Master Schedule'],['calls','Night Call'],['request','Submit Request'],['history','Request History']].map((x,i)=>({key:x[0],label:x[1],active:i===0}));
     getPortalBase('Physician Portal','View assignments and submit requests',tabs,'Physician Details');
-    el('#topActions').innerHTML = `<div class="top-inputs"><label>Physician</label><select id="physicianSelect">${state.physicians.map(p => `<option value="${p.id}" ${p.id===currentId?'selected':''}>${p.name}</option>`).join('')}</select></div>`;
+    el('#topActions').innerHTML = `<div class="top-inputs"><label>Physician</label><select id="physicianSelect"><option value="" ${!currentId?'selected':''}>Select initials...</option>${state.physicians.map(p => `<option value="${p.id}" ${p.id===currentId?'selected':''}>${p.name}</option>`).join('')}</select></div>`;
     renderPhysicianSummaryBar(currentId);
     let active='schedule';
     attachTabBehavior(tab => { active=tab; draw(); });
-    el('#physicianSelect').onchange = e => { window.AppPrefs.set('schedPhysicianSelected', e.target.value); renderPhysician(); };
+    el('#physicianSelect').onchange = e => { if(e.target.value) window.AppPrefs.set('schedPhysicianSelected', e.target.value); else window.AppPrefs.remove('schedPhysicianSelected'); renderPhysician(); };
+    if(!currentId){
+      if(el('#summaryBar')) el('#summaryBar').innerHTML = '<div class="card"><strong>Select your initials first.</strong><div class="small">No physician is selected by default. This prevents accidental CL/default request changes.</div></div>';
+      if(el('#mainContent')) el('#mainContent').innerHTML = '<div class="card"><div class="section-title"><h2>Select your initials</h2></div><div class="detail-box">Choose your initials from the Physician dropdown before viewing or submitting requests.</div></div>';
+      if(el('#inspectorContent')) el('#inspectorContent').innerHTML = '<div class="detail-box">Waiting for physician selection.</div>';
+      return;
+    }
+
     function draw(){
       const fresh = S(); const pid = window.AppPrefs.get('schedPhysicianSelected') || currentId;
       if(active==='schedule'){
