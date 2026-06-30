@@ -270,7 +270,10 @@ thead .service-Weekend{background:var(--svc-weekend)!important}
     return false;
   }
   function readRaw(){
-    if(memoryFallback != null) return memoryFallback;
+    // Always prefer the latest Supabase bootState over any older in-page memory copy.
+    // The prior order returned memoryFallback first, so after cloud polling updated
+    // bootState, a render/loadState cycle could still read stale memoryFallback
+    // and push that older scheduler state back to Supabase.
     try{
       const boot = window.SchedulerCloud?.getBootState?.();
       if(boot && typeof boot === 'object'){
@@ -278,6 +281,7 @@ thead .service-Weekend{background:var(--svc-weekend)!important}
         return memoryFallback;
       }
     }catch(e){}
+    if(memoryFallback != null) return memoryFallback;
     return null;
   }
   function writeRaw(value){
@@ -448,6 +452,7 @@ function loadState(){
         generatedSummary: { ...base.generatedSummary, ...(parsed.generatedSummary || {}) }
       };
       applyOneTimeFreshReset(merged);
+      saveState(merged);
       return merged;
     }catch(err){
       console.error('loadState failed', err);
@@ -455,12 +460,14 @@ function loadState(){
       if(boot && typeof boot === 'object'){
         try{
           const cloned = deepClone(boot);
+          saveState(cloned);
           return cloned;
         }catch(innerErr){
           console.error('loadState boot fallback failed', innerErr);
         }
       }
       const init = defaultState();
+      saveState(init);
       return init;
     }
   }
@@ -472,8 +479,7 @@ function loadState(){
     saveState(next);
     return next;
   }
-  function resetState(){ const init = defaultState();
-      return init; }
+  function resetState(){ const init = defaultState(); saveState(init); return init; }
   function publishDraft(){
     return updateState(state => {
       const start = state.settings?.scheduleStart || '';
