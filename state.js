@@ -51,7 +51,9 @@
 
   const locums = [
     { id:'LOC1', name:'Locum 1', initials:'', type:'locum', generalLocum:true, coveringPhysician:'', weeklyCoverage:[], callDates:[], weekendDates:[] },
-    { id:'LOC2', name:'Locum 2', initials:'', type:'locum', generalLocum:true, coveringPhysician:'', weeklyCoverage:[], callDates:[], weekendDates:[] }
+    { id:'LOC2', name:'Locum 2', initials:'', type:'locum', generalLocum:true, coveringPhysician:'', weeklyCoverage:[], callDates:[], weekendDates:[] },
+    { id:'LOC3', name:'Locum 3', initials:'', type:'locum', generalLocum:true, coveringPhysician:'', weeklyCoverage:[], callDates:[], weekendDates:[] },
+    { id:'LOC4', name:'Locum 4', initials:'', type:'locum', generalLocum:true, coveringPhysician:'', weeklyCoverage:[], callDates:[], weekendDates:[] }
   ];
 
   function defaultState(){

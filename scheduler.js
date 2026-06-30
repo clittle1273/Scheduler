@@ -368,7 +368,9 @@ function applyCarRotation(state, weeks, availability){
           nightAvailable: !hasVacation(state, person.id, week.weekStart, week.weekendEnd) && !hasRequest(state, person.id,'no_call',week.weekStart, week.weekEnd) && !hasRequest(state, person.id,'no_night_call',week.weekStart, week.weekEnd),
           weekendAvailable: !hasVacation(state, person.id, week.weekStart, week.weekendEnd) && !hasRequest(state, person.id,'weekends_off',week.weekendStart, week.weekendEnd),
           respRequested: hasRequest(state, person.id, 'resp_week_request', week.weekStart, week.weekEnd),
-          nephroRequested: hasRequest(state, person.id, 'nephro_week_request', week.weekStart, week.weekEnd)
+          nephroRequested: hasRequest(state, person.id, 'nephro_week_request', week.weekStart, week.weekEnd),
+          noGimWeek: hasRequest(state, person.id, 'no_gim_week', week.weekStart, week.weekEnd),
+          noIcuWeek: hasRequest(state, person.id, 'no_icu_week', week.weekStart, week.weekEnd)
         };
       });
     });
@@ -452,6 +454,8 @@ function applyCarRotation(state, weeks, availability){
       if(!canDoService(p, service)) return false;
       if(assigned[p.id]) return false;
       if(!availability[p.id][week.weekStart].serviceAvailable) return false;
+      if(service === 'GIM' && availability[p.id][week.weekStart].noGimWeek) return false;
+      if(service === 'ICU' && availability[p.id][week.weekStart].noIcuWeek) return false;
       return true;
     }).sort((a,b) => {
       const aPref = service === 'Resp' ? (availability[a.id][week.weekStart].respRequested ? -1 : 0)

@@ -26,11 +26,13 @@
       no_call:'No Call',
       no_night_call:'No Night Call',
       weekends_off:'Weekends Off',
+      no_gim_week:'No GIM Weeks',
+      no_icu_week:'No ICU Weeks',
       resp_week_request:'Resp Week Request',
       nephro_week_request:'Nephro Week Request'
     }[type] || type;
   }
-  function allRequestTypes(){ return ['vacation','no_call','no_night_call','weekends_off','resp_week_request','nephro_week_request']; }
+  function allRequestTypes(){ return ['vacation','no_call','no_night_call','weekends_off','no_gim_week','no_icu_week','resp_week_request','nephro_week_request']; }
 
   function baseShell(title, subtitle, tabs, inspectorTitle='Inspector'){
     return `

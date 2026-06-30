@@ -310,82 +310,28 @@ thead .service-header{color:#fff!important}
   let memoryFallback = null;
 
   function storageAvailable(){
-    try{
-      const testKey = STORAGE_KEY + '_test';
-      localStorage.setItem(testKey, '1');
-      localStorage.removeItem(testKey);
-      return true;
-    }catch(e){ return false; }
-  }
-  function mergeRequestArrays(a, b){
-    const map = new Map();
-    (a || []).forEach(r => { if(r && r.id) map.set(r.id, r); });
-    (b || []).forEach(r => { if(r && r.id) map.set(r.id, r); });
-    return Array.from(map.values());
+    return false;
   }
   function readRaw(){
-    let localRaw = null;
-    let bootRaw = null;
-    try{ if(storageAvailable()) localRaw = localStorage.getItem(STORAGE_KEY); }catch(e){}
+    if(memoryFallback != null) return memoryFallback;
     try{
       const boot = window.SchedulerCloud?.getBootState?.();
-      if(boot && typeof boot === 'object') bootRaw = JSON.stringify(boot);
-    }catch(e){}
-
-    // Prefer a merged state when both local browser storage and Supabase boot state exist.
-    // This prevents a fresh/empty cloud read from wiping requests that were just saved locally,
-    // while still allowing cloud data from other portals to come through.
-    if(localRaw && bootRaw){
-      try{
-        const localState = JSON.parse(localRaw) || {};
-        const bootState = JSON.parse(bootRaw) || {};
-        const merged = { ...localState, ...bootState };
-        merged.requests = mergeRequestArrays(localState.requests, bootState.requests);
-        if((localState.requests || []).length && !(bootState.requests || []).length){
-          merged.requests = localState.requests;
-        }
-        memoryFallback = JSON.stringify(merged);
+      if(boot && typeof boot === 'object'){
+        memoryFallback = JSON.stringify(boot);
         return memoryFallback;
-      }catch(e){}
-    }
-    if(localRaw){ memoryFallback = localRaw; return localRaw; }
-    if(bootRaw){ memoryFallback = bootRaw; return bootRaw; }
-    if(memoryFallback != null) return memoryFallback;
+      }
+    }catch(e){}
     return null;
   }
   function writeRaw(value){
-    let finalValue = value;
+    memoryFallback = value;
     try{
-      const outgoing = JSON.parse(value);
-      const cloud = window.SchedulerCloud?.getBootState?.();
-      if(cloud && typeof cloud === 'object'){
-        // Critical safety rule: never let an older/stale browser tab wipe requests.
-        // Every write preserves the union of existing cloud requests and outgoing requests.
-        // This protects all physicians, not just CL.
-        outgoing.requests = mergeRequestArrays(cloud.requests || [], outgoing.requests || []);
-      }
-      outgoing.metadata = outgoing.metadata || {};
-      outgoing.metadata.lastClientSaveAt = new Date().toISOString();
-      finalValue = JSON.stringify(outgoing);
-    }catch(e){
-      finalValue = value;
-    }
-    memoryFallback = finalValue;
-    try{ if(storageAvailable()) localStorage.setItem(STORAGE_KEY, finalValue); }catch(e){}
-    try{
-      const parsed = JSON.parse(finalValue);
+      const parsed = JSON.parse(value);
       window.SchedulerCloud?.setBootState?.(parsed);
     }catch(e){}
-    try{ window.SchedulerCloud?.queuePush?.(STORAGE_KEY, finalValue); }catch(e){}
+    try{ window.SchedulerCloud?.queuePush?.(STORAGE_KEY, value); }catch(e){}
   }
   function deepClone(x){ return JSON.parse(JSON.stringify(x)); }
-
-  function mergeRequestsKeepNewest(existingRequests, incomingRequests){
-    const map = new Map();
-    (existingRequests || []).forEach(r => { if(r && r.id) map.set(r.id, r); });
-    (incomingRequests || []).forEach(r => { if(r && r.id) map.set(r.id, r); });
-    return Array.from(map.values()).sort((a,b) => String(a.startDate || '').localeCompare(String(b.startDate || '')) || String(a.createdAt || '').localeCompare(String(b.createdAt || '')));
-  }
 
   const physicians = [
     { id:'CL', name:'CL', type:'physician', services:['ICU','GIM','CAR1','CAR2','Echo','Weekend','Night','OP'], echoEligible:true, weekendEligible:true, nightEligible:true, opEligible:true,
@@ -464,8 +410,19 @@ thead .service-header{color:#fff!important}
 
   
   function applyOneTimeFreshReset(merged){
-    // Disabled after live deployment: this old one-time reset can wipe real requests
-    // when an older/empty cloud state is loaded. Preserve existing live data.
+    const marker = 'fresh_start_v1';
+    if(merged?.metadata?.buildResetMarker === marker) return merged;
+    merged.draftWeeks = [];
+    merged.publishedWeeks = [];
+    merged.draftNightManual = [];
+    merged.publishedNightManual = [];
+    merged.overrideLog = [];
+    merged.fairnessCarryForward = {};
+    merged.publishHistory = [];
+    merged.publishedArchives = [];
+    merged.currentPublishedArchiveId = '';
+    merged.generatedSummary = { fairnessSummary: [], validation: [] };
+    merged.metadata = { ...(merged.metadata || {}), lastGeneratedAt: null, lastPublishedAt: null, buildResetMarker: marker };
     return merged;
   }
 
@@ -522,10 +479,8 @@ thead .service-header{color:#fff!important}
         currentPublishedArchiveId: parsed.currentPublishedArchiveId || '',
         generatedSummary: { ...base.generatedSummary, ...(parsed.generatedSummary || {}) }
       };
-      // IMPORTANT: never write back to Supabase/local storage during load.
-      // Loading pages should be read-only. Previously admin/physician refresh could
-      // merge a default/empty boot state and immediately save it, wiping requests.
-      // Explicit actions (save request, generate, publish, locum save) still write.
+      applyOneTimeFreshReset(merged);
+      saveState(merged);
       return merged;
     }catch(err){
       console.error('loadState failed', err);
@@ -533,13 +488,14 @@ thead .service-header{color:#fff!important}
       if(boot && typeof boot === 'object'){
         try{
           const cloned = deepClone(boot);
+          saveState(cloned);
           return cloned;
         }catch(innerErr){
           console.error('loadState boot fallback failed', innerErr);
         }
       }
       const init = defaultState();
-      // Do not save defaults during a failed load. A failed/empty load must never wipe live requests.
+      saveState(init);
       return init;
     }
   }
@@ -577,15 +533,6 @@ thead .service-header{color:#fff!important}
   }
   function upsertRequest(req){
     return updateState(state => {
-      // Defensive merge: if this browser tab has stale local state, do not let it
-      // overwrite requests that are already in the cloud. This was most visible for CL
-      // because CL is the default selected physician.
-      try{
-        const cloud = window.SchedulerCloud?.getBootState?.();
-        if(cloud && Array.isArray(cloud.requests)){
-          state.requests = mergeRequestsKeepNewest(cloud.requests, state.requests || []);
-        }
-      }catch(e){}
       const idx = state.requests.findIndex(r => r.id === req.id);
       if(idx >= 0) state.requests[idx] = req;
       else state.requests.push(req);
@@ -796,10 +743,10 @@ thead .service-header{color:#fff!important}
           serviceAvailable: !hasVacation(state, person.id, week.weekStart, week.weekendEnd),
           nightAvailable: !hasVacation(state, person.id, week.weekStart, week.weekendEnd) && !hasRequest(state, person.id,'no_call',week.weekStart, week.weekEnd) && !hasRequest(state, person.id,'no_night_call',week.weekStart, week.weekEnd),
           weekendAvailable: !hasVacation(state, person.id, week.weekStart, week.weekendEnd) && !hasRequest(state, person.id,'weekends_off',week.weekendStart, week.weekendEnd),
-          gimWeekUnavailable: hasRequest(state, person.id, 'no_gim_week', week.weekStart, week.weekEnd),
-          icuWeekUnavailable: hasRequest(state, person.id, 'no_icu_week', week.weekStart, week.weekEnd),
           respRequested: hasRequest(state, person.id, 'resp_week_request', week.weekStart, week.weekEnd),
-          nephroRequested: hasRequest(state, person.id, 'nephro_week_request', week.weekStart, week.weekEnd)
+          nephroRequested: hasRequest(state, person.id, 'nephro_week_request', week.weekStart, week.weekEnd),
+          noGimWeek: hasRequest(state, person.id, 'no_gim_week', week.weekStart, week.weekEnd),
+          noIcuWeek: hasRequest(state, person.id, 'no_icu_week', week.weekStart, week.weekEnd)
         };
       });
     });
@@ -861,8 +808,8 @@ thead .service-header{color:#fff!important}
       if(!canDoService(p, service)) return false;
       if(assigned[p.id]) return false;
       if(!availability[p.id][week.weekStart].serviceAvailable) return false;
-      if(service === 'GIM' && availability[p.id][week.weekStart].gimWeekUnavailable) return false;
-      if(service === 'ICU' && availability[p.id][week.weekStart].icuWeekUnavailable) return false;
+      if(service === 'GIM' && availability[p.id][week.weekStart].noGimWeek) return false;
+      if(service === 'ICU' && availability[p.id][week.weekStart].noIcuWeek) return false;
       return true;
     }).sort((a,b) => {
       const aPref = service === 'Resp' ? (availability[a.id][week.weekStart].respRequested ? -1 : 0)
@@ -1292,8 +1239,8 @@ function chipForOwner(state, ownerId, kind=''){
       no_call:'No Call',
       no_night_call:'No Night Call',
       weekends_off:'Weekends Off',
-      no_gim_week:'Unavailable for GIM Week',
-      no_icu_week:'Unavailable for ICU Week',
+      no_gim_week:'No GIM Weeks',
+      no_icu_week:'No ICU Weeks',
       resp_week_request:'Resp Week Request',
       nephro_week_request:'Nephro Week Request'
     }[type] || type;
@@ -1412,7 +1359,7 @@ function chipForOwner(state, ownerId, kind=''){
         bindNightCalendar();
       } else if(active.key === 'requests'){
         main.innerHTML = renderRequestsAdmin(st);
-        inspector.innerHTML = '<div class="detail-box">Review incoming requests. Away, no call, weekends off, and GIM/ICU week-unavailable requests are hard blocks. Resp and nephro requests are soft preferences.</div>';
+        inspector.innerHTML = '<div class="detail-box">Review incoming requests. Vacation, no call, no night call, and weekends off are hard blocks. Resp and nephro requests are soft preferences.</div>';
         bindRequestAdmin();
       } else if(active.key === 'fairness'){
         main.innerHTML = renderFairness(st, summary);
@@ -2398,7 +2345,7 @@ function renderPhysicianSchedule(state,pid){
           <h2>Choose Dates</h2>
           <div class="inline-actions" id="physMonthNav">${monthButtons()}<button class="btn" id="clearPhysRange" type="button">Clear Range</button></div>
         </div>
-        <div class="detail-box">Use Previous Month / Next Month to move through the schedule. Click a start date, then click an end date. For GIM or ICU week unavailability, choose any date range that overlaps the affected Monday-Friday week.</div>
+        <div class="detail-box">Use Previous Month / Next Month to move through the schedule. Click a start date, then click an end date.</div>
         <div id="physMonthCalendar" class="calendar-months physician-request-calendar" style="margin-top:14px;overflow:visible;max-height:none;padding-right:0;">
           ${monthHtml}
         </div>
@@ -2489,27 +2436,17 @@ function renderPhysicianSchedule(state,pid){
       const startDate = el('#physReqStart').value;
       const endDate = el('#physReqEnd').value || startDate;
       if(!startDate || !endDate) return alert('Choose a start and end date.');
-      const activePid = el('#physicianSelect')?.value || pid;
-      const req = {
+      window.AppState.upsertRequest({
         id:`req-${Date.now()}`,
-        personId:activePid,
+        personId:pid,
         type:el('#physReqType').value,
         startDate:startDate,
         endDate:endDate,
         status:'approved',
         createdAt:new Date().toISOString()
-      };
-      window.AppState.upsertRequest(req);
-      try{
-        const key = `physRequestBackup_${activePid}`;
-        const prior = JSON.parse(localStorage.getItem(key) || '[]');
-        prior.push(req);
-        localStorage.setItem(key, JSON.stringify(prior.slice(-50)));
-      }catch(e){}
-      const saved = (window.AppState.loadState().requests || []).some(r => r.id === req.id && r.personId === activePid);
-      alert(saved ? 'Request saved.' : 'Request submitted, but could not verify local save. Check admin before closing this tab.');
-      window.AppPrefs.set('schedPhysicianSelected', activePid);
-      window.AppPrefs.set('physActiveTab', 'history');
+      });
+      alert('Request saved.');
+      window.AppPrefs.set('physActiveTab', 'request');
       renderPhysician();
     };
 
@@ -2749,8 +2686,6 @@ function renderPhysicianSchedule(state,pid){
 
   document.addEventListener('DOMContentLoaded', async () => {
     try{
-      let preHydrateRaw = null;
-      try{ preHydrateRaw = localStorage.getItem('schedulerRebuildStateV13'); }catch(e){}
       let hydrated = false;
       for(let attempt = 0; attempt < 3 && !hydrated; attempt += 1){
         hydrated = !!(await window.SchedulerCloud?.hydrateLocalState?.('schedulerRebuildStateV13'));
@@ -2758,18 +2693,6 @@ function renderPhysicianSchedule(state,pid){
           await new Promise(resolve => setTimeout(resolve, 300));
         }
       }
-      // If hydrate pulled an older cloud copy, restore a merged request list from the pre-hydrate browser copy.
-      try{
-        if(preHydrateRaw){
-          const before = JSON.parse(preHydrateRaw) || {};
-          const after = window.AppState.loadState();
-          const mergedRequests = mergeRequestArrays(before.requests || [], after.requests || []);
-          if(mergedRequests.length > (after.requests || []).length){
-            after.requests = mergedRequests;
-            window.AppState.saveState(after);
-          }
-        }
-      }catch(e){}
       if(PAGE==='index') renderIndex();
       else if(PAGE==='admin') renderAdmin();
       else if(PAGE==='physician') renderPhysician();
