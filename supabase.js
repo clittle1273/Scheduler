@@ -3,7 +3,8 @@
     url: 'https://sptnpbtwlowhurtqhnqv.supabase.co',
     anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNwdG5wYnR3bG93aHVydHFobnF2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI5MjAyMDksImV4cCI6MjA4ODQ5NjIwOX0.gksbgmiUoPVA-1N3KcIl59D4BhGAVFbw3d2lkjUXEbo',
     table: 'scheduler_state',
-    rowId: 'global',
+    rowId: 'global_v2_20260630',
+    legacyRowId: 'global',
     pollIntervalMs: 15000
   };
 
@@ -51,9 +52,10 @@
     }, extra || {});
   }
 
-  function rowUrl(selectClause){
+  function rowUrl(selectClause, rowIdOverride){
     const select = selectClause || 'id,state,updated_at';
-    return `${config.url}/rest/v1/${config.table}?id=eq.${encodeURIComponent(config.rowId)}&select=${encodeURIComponent(select)}`;
+    const id = rowIdOverride || config.rowId;
+    return `${config.url}/rest/v1/${config.table}?id=eq.${encodeURIComponent(id)}&select=${encodeURIComponent(select)}`;
   }
 
   function isMeaningfulState(value){
@@ -127,6 +129,23 @@
     }
   }
 
+  async function fetchSpecificRow(rowId){
+    if(!configured()) return null;
+    try{
+      const resp = await fetch(rowUrl(undefined, rowId), { method:'GET', headers: headers() });
+      if(!resp.ok){
+        const text = await resp.text().catch(() => '');
+        console.error('Supabase legacy fetch failed', resp.status, text);
+        return null;
+      }
+      const data = await resp.json();
+      return Array.isArray(data) ? (data[0] || null) : (data || null);
+    }catch(error){
+      console.error('Supabase legacy fetch failed', error);
+      return null;
+    }
+  }
+
   async function upsertStateObject(stateObj){
     if(!configured()) return null;
     const payload = [{ id: config.rowId, state: stateObj || {}, updated_at: new Date().toISOString() }];
@@ -159,10 +178,19 @@
     const remoteMeaningful = isMeaningfulState(remoteState);
 
     if(existing && remoteMeaningful) return existing;
-
     if(existing) return existing;
 
-    const created = await upsertStateObject({});
+    // Emergency isolation: this build uses a new rowId so old/stale tabs writing to
+    // the legacy 'global' row cannot erase new requests. On first load, seed the new
+    // row from the legacy row if it exists, then all future writes go only to rowId.
+    let seedState = {};
+    if(config.legacyRowId){
+      const legacy = await fetchSpecificRow(config.legacyRowId);
+      if(legacy && !legacy.__fetchError && isMeaningfulState(legacy.state)){
+        seedState = legacy.state || {};
+      }
+    }
+    const created = await upsertStateObject(seedState);
     if(created && !created.__upsertError) return created;
     return null;
   }
