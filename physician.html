@@ -480,7 +480,6 @@ thead .service-header{color:#fff!important}
         generatedSummary: { ...base.generatedSummary, ...(parsed.generatedSummary || {}) }
       };
       applyOneTimeFreshReset(merged);
-      saveState(merged);
       return merged;
     }catch(err){
       console.error('loadState failed', err);
@@ -488,14 +487,12 @@ thead .service-header{color:#fff!important}
       if(boot && typeof boot === 'object'){
         try{
           const cloned = deepClone(boot);
-          saveState(cloned);
           return cloned;
         }catch(innerErr){
           console.error('loadState boot fallback failed', innerErr);
         }
       }
       const init = defaultState();
-      saveState(init);
       return init;
     }
   }
@@ -507,7 +504,8 @@ thead .service-header{color:#fff!important}
     saveState(next);
     return next;
   }
-  function resetState(){ const init = defaultState(); saveState(init); return init; }
+  function resetState(){ const init = defaultState();
+      return init; }
   function publishDraft(){
     return updateState(state => {
       const start = state.settings?.scheduleStart || '';
