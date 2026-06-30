@@ -961,6 +961,8 @@ function exportMasterPDF(){
           serviceAvailable: !hasVacation(state, person.id, week.weekStart, week.weekendEnd),
           nightAvailable: !hasVacation(state, person.id, week.weekStart, week.weekendEnd) && !hasRequest(state, person.id,'no_call',week.weekStart, week.weekEnd) && !hasRequest(state, person.id,'no_night_call',week.weekStart, week.weekEnd),
           weekendAvailable: !hasVacation(state, person.id, week.weekStart, week.weekendEnd) && !hasRequest(state, person.id,'weekends_off',week.weekendStart, week.weekendEnd),
+          gimWeekUnavailable: hasRequest(state, person.id, 'no_gim_week', week.weekStart, week.weekEnd),
+          icuWeekUnavailable: hasRequest(state, person.id, 'no_icu_week', week.weekStart, week.weekEnd),
           respRequested: hasRequest(state, person.id, 'resp_week_request', week.weekStart, week.weekEnd),
           nephroRequested: hasRequest(state, person.id, 'nephro_week_request', week.weekStart, week.weekEnd)
         };
@@ -1036,6 +1038,8 @@ function exportMasterPDF(){
       if(!canDoService(p, service)) return false;
       if(assigned[p.id]) return false;
       if(!availability[p.id][week.weekStart].serviceAvailable) return false;
+      if(service === 'GIM' && availability[p.id][week.weekStart].gimWeekUnavailable) return false;
+      if(service === 'ICU' && availability[p.id][week.weekStart].icuWeekUnavailable) return false;
       return true;
     }).sort((a,b) => {
       const aPref = service === 'Resp' ? (availability[a.id][week.weekStart].respRequested ? -1 : 0)
@@ -1616,11 +1620,13 @@ function chipForOwner(state, ownerId, kind=''){
       no_call:'No Call',
       no_night_call:'No Night Call',
       weekends_off:'Weekends Off',
+      no_gim_week:'Unavailable for GIM Week',
+      no_icu_week:'Unavailable for ICU Week',
       resp_week_request:'Resp Week Request',
       nephro_week_request:'Nephro Week Request'
     }[type] || type;
   }
-  function allRequestTypes(){ return ['vacation','no_call','weekends_off','resp_week_request','nephro_week_request']; }
+  function allRequestTypes(){ return ['vacation','no_call','weekends_off','no_gim_week','no_icu_week','resp_week_request','nephro_week_request']; }
 
   function baseShell(title, subtitle, tabs, inspectorTitle='Inspector'){
     return `
