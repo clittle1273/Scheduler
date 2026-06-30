@@ -65,6 +65,37 @@
   }
 
 
+
+
+  function requestMergeKey(req){
+    if(!req || typeof req !== 'object') return '';
+    return String(req.id || [req.personId || '', req.type || '', req.startDate || '', req.endDate || '', req.notes || ''].join('|'));
+  }
+
+  function mergeRequests(remoteRequests, outgoingRequests){
+    const map = new Map();
+    const add = (req) => {
+      const key = requestMergeKey(req);
+      if(!key) return;
+      map.set(key, req);
+    };
+    (Array.isArray(remoteRequests) ? remoteRequests : []).forEach(add);
+    (Array.isArray(outgoingRequests) ? outgoingRequests : []).forEach(add);
+    return Array.from(map.values()).sort((a,b) => {
+      const ad = String(a.startDate || '');
+      const bd = String(b.startDate || '');
+      return ad.localeCompare(bd) || String(a.personId || '').localeCompare(String(b.personId || ''));
+    });
+  }
+
+  function mergeStateForWrite(remoteState, outgoingState){
+    const remote = (remoteState && typeof remoteState === 'object') ? remoteState : {};
+    const outgoing = (outgoingState && typeof outgoingState === 'object') ? outgoingState : {};
+    const merged = Object.assign({}, remote, outgoing);
+    merged.requests = mergeRequests(remote.requests, outgoing.requests);
+    return merged;
+  }
+
   async function fetchRow(){
     if(!configured()) return null;
     try{
@@ -139,10 +170,16 @@
     const parsed = typeof payload === 'string' ? safeJsonParse(payload) : payload;
     if(!parsed || typeof parsed !== 'object') return false;
     inflightPush = (async () => {
-      const data = await upsertStateObject(parsed);
+      // Critical safety rule: never let a stale tab replace the request list with
+      // an older or empty request list. Fetch the current cloud row first and
+      // merge requests by id before writing the full scheduler state back.
+      const currentRow = await fetchRow();
+      const currentState = (currentRow && !currentRow.__fetchError) ? (currentRow.state || {}) : {};
+      const merged = mergeStateForWrite(currentState, parsed);
+      const data = await upsertStateObject(merged);
       if(!data || data.__upsertError) return false;
       lastSeenUpdatedAt = data.updated_at || new Date().toISOString();
-      bootState = JSON.parse(JSON.stringify(parsed));
+      bootState = JSON.parse(JSON.stringify(merged));
       return true;
     })();
     const result = await inflightPush;
@@ -167,7 +204,7 @@
     const row = await fetchRow();
     if(!row || row.__fetchError || !row.updated_at) return false;
     if(lastSeenUpdatedAt && row.updated_at <= lastSeenUpdatedAt) return false;
-    const remoteState = row.state || {};
+    const remoteState = mergeStateForWrite(row.state || {}, bootState || {});
     const currentRaw = bootState ? JSON.stringify(bootState) : null;
     const remoteRaw = JSON.stringify(remoteState);
     bootState = JSON.parse(remoteRaw);
