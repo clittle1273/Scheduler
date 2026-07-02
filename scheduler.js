@@ -155,6 +155,7 @@ function applyCarRotation(state, weeks, availability){
     state.physicians.forEach(p => {
       const fte = (p.fte || 1.0);
       const hist = carry[p.id] || emptyCarryForwardRowScheduler(p.id, p.name);
+      const fte = (p.fte || 1.0);
       const serviceCounts = {
         ICU: hist.serviceCounts?.ICU || 0,
         GIM: hist.serviceCounts?.GIM || 0,
@@ -343,6 +344,9 @@ function applyCarRotation(state, weeks, availability){
     });
   }
 
+    const priorWeeks = state.draftWeeks || [];
+    const priorMap = Object.fromEntries(priorWeeks.map(w => [w.weekStart, w]));
+    
 
   function currentScore(store, id, bucket){
     if(!store[id]) return 999;
@@ -532,9 +536,9 @@ function applyCarRotation(state, weeks, availability){
   }
 
 
-  function assignMajorServices(state, weeks, availability, options={}){
-    // deterministic CAR rotation first
-    applyCarRotation(state, weeks, availability);
+  function assignMajorServices(state, weeks, availability, options={
+  // deterministic CAR rotation first
+  applyCarRotation(state, weeks, availability);}){
     const store = initFairnessStore(state);
     seedLockedMajorAssignments(state, weeks, store);
     seedLocumWeeklyCoverage(state, weeks, availability, store);
@@ -750,34 +754,6 @@ function applyCarRotation(state, weeks, availability){
     return map[prev] === personId || map[next] === personId;
   }
 
-  function dayGap(a, b){
-    return Math.round(Math.abs(parseDate(a) - parseDate(b)) / 86400000);
-  }
-
-  function callSpacingPenalty(map, personId, dateStr, week, weekIndex, weekdayIndex, weeks){
-    let penalty = 0;
-    Object.entries(map || {}).forEach(([assignedDate, owner]) => {
-      if(owner !== personId) return;
-      const gap = dayGap(assignedDate, dateStr);
-      if(gap <= 1) penalty += 10000;
-      else if(gap === 2) penalty += 4000;
-      else if(gap === 3) penalty += 600;
-    });
-
-    const prevWeekendOwner = weekIndex > 0 ? (weeks[weekIndex - 1].weekendOwner || '') : '';
-    if(prevWeekendOwner === personId){
-      if(weekdayIndex === 0) penalty += 10000; // Monday after weekend call
-      if(weekdayIndex === 1) penalty += 5000;  // Tuesday after weekend call
-    }
-
-    if(week.weekendOwner === personId){
-      if(weekdayIndex === 4) penalty += 10000; // Friday before own weekend
-      if(weekdayIndex === 3) penalty += 1000;  // Thursday before own weekend
-    }
-
-    return penalty;
-  }
-
   function assignWeekdayNights(state, weeks, availability, options={}){
     const store = initFairnessStore(state);
     const out = [];
@@ -807,12 +783,8 @@ function applyCarRotation(state, weeks, availability){
           if(hasConsecutiveNight(map,p.id,date)) return false;
           return true;
         }).sort((a,b) => {
-          const as = currentScore(store, a.id, 'night')
-            + callSpacingPenalty(map, a.id, date, week, idx, i, weeks)
-            + (options.stable ? stableBonusNight(state, date, a.id) : 0);
-          const bs = currentScore(store, b.id, 'night')
-            + callSpacingPenalty(map, b.id, date, week, idx, i, weeks)
-            + (options.stable ? stableBonusNight(state, date, b.id) : 0);
+          const as = currentScore(store, a.id, 'night') + (options.stable ? stableBonusNight(state, date, a.id) : 0);
+          const bs = currentScore(store, b.id, 'night') + (options.stable ? stableBonusNight(state, date, b.id) : 0);
           if(as !== bs) return as - bs;
           return a.id.localeCompare(b.id);
         });

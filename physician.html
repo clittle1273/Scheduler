@@ -284,7 +284,7 @@ thead .service-header{color:#fff!important}
 #physMonthNav{align-items:center;}
 #physPrevMonth:disabled,#physNextMonth:disabled{opacity:.45;cursor:not-allowed;}
 </style>
-<script src="./supabase.js?v=working-rollback-20260701"></script>
+<script src="./supabase.js?v=request-save-20260630"></script>
 </head>
 <body data-page="physician">
 <script>window.PAGE_TYPE='physician';</script>
@@ -310,20 +310,9 @@ thead .service-header{color:#fff!important}
   let memoryFallback = null;
 
   function storageAvailable(){
-    try{
-      const testKey = STORAGE_KEY + '_test';
-      localStorage.setItem(testKey, '1');
-      localStorage.removeItem(testKey);
-      return true;
-    }catch(e){
-      return false;
-    }
+    return false;
   }
   function readRaw(){
-    if(storageAvailable()){
-      const local = localStorage.getItem(STORAGE_KEY);
-      if(local) return local;
-    }
     if(memoryFallback != null) return memoryFallback;
     try{
       const boot = window.SchedulerCloud?.getBootState?.();
@@ -336,9 +325,6 @@ thead .service-header{color:#fff!important}
   }
   function writeRaw(value){
     memoryFallback = value;
-    if(storageAvailable()){
-      try{ localStorage.setItem(STORAGE_KEY, value); }catch(e){}
-    }
     try{
       const parsed = JSON.parse(value);
       window.SchedulerCloud?.setBootState?.(parsed);
@@ -424,7 +410,19 @@ thead .service-header{color:#fff!important}
 
   
   function applyOneTimeFreshReset(merged){
-    // Rollback safety: do not wipe draft/published schedules or requests on load.
+    const marker = 'fresh_start_v1';
+    if(merged?.metadata?.buildResetMarker === marker) return merged;
+    merged.draftWeeks = [];
+    merged.publishedWeeks = [];
+    merged.draftNightManual = [];
+    merged.publishedNightManual = [];
+    merged.overrideLog = [];
+    merged.fairnessCarryForward = {};
+    merged.publishHistory = [];
+    merged.publishedArchives = [];
+    merged.currentPublishedArchiveId = '';
+    merged.generatedSummary = { fairnessSummary: [], validation: [] };
+    merged.metadata = { ...(merged.metadata || {}), lastGeneratedAt: null, lastPublishedAt: null, buildResetMarker: marker };
     return merged;
   }
 
