@@ -265,7 +265,7 @@ thead .service-Weekend{background:var(--svc-weekend)!important}
 .night-month-nav{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px}
 .night-month-nav .month-label{font-weight:700}
 </style>
-<script src="./supabase.js?v=request-save-20260630"></script>
+<script src="./supabase.js?v=working-rollback-20260701"></script>
 </head>
 <body data-page="admin">
 <script>window.PAGE_TYPE='admin';
@@ -430,9 +430,20 @@ function exportMasterPDF(){
   let memoryFallback = null;
 
   function storageAvailable(){
-    return false;
+    try{
+      const testKey = STORAGE_KEY + '_test';
+      localStorage.setItem(testKey, '1');
+      localStorage.removeItem(testKey);
+      return true;
+    }catch(e){
+      return false;
+    }
   }
   function readRaw(){
+    if(storageAvailable()){
+      const local = localStorage.getItem(STORAGE_KEY);
+      if(local) return local;
+    }
     if(memoryFallback != null) return memoryFallback;
     try{
       const boot = window.SchedulerCloud?.getBootState?.();
@@ -445,6 +456,9 @@ function exportMasterPDF(){
   }
   function writeRaw(value){
     memoryFallback = value;
+    if(storageAvailable()){
+      try{ localStorage.setItem(STORAGE_KEY, value); }catch(e){}
+    }
     try{
       const parsed = JSON.parse(value);
       window.SchedulerCloud?.setBootState?.(parsed);
@@ -530,19 +544,7 @@ function exportMasterPDF(){
 
   
   function applyOneTimeFreshReset(merged){
-    const marker = 'fresh_start_v1';
-    if(merged?.metadata?.buildResetMarker === marker) return merged;
-    merged.draftWeeks = [];
-    merged.publishedWeeks = [];
-    merged.draftNightManual = [];
-    merged.publishedNightManual = [];
-    merged.overrideLog = [];
-    merged.fairnessCarryForward = {};
-    merged.publishHistory = [];
-    merged.publishedArchives = [];
-    merged.currentPublishedArchiveId = '';
-    merged.generatedSummary = { fairnessSummary: [], validation: [] };
-    merged.metadata = { ...(merged.metadata || {}), lastGeneratedAt: null, lastPublishedAt: null, buildResetMarker: marker };
+    // Rollback safety: do not wipe draft/published schedules or requests on load.
     return merged;
   }
 
@@ -1261,35 +1263,7 @@ function exportMasterPDF(){
     return map[prev] === personId || map[next] === personId;
   }
 
-  function dayGap(a, b){
-    return Math.round(Math.abs(parseDate(a) - parseDate(b)) / 86400000);
-  }
-
-  function callSpacingPenalty(map, personId, dateStr, week, weekIndex, weekdayIndex, weeks){
-    let penalty = 0;
-    Object.entries(map || {}).forEach(([assignedDate, owner]) => {
-      if(owner !== personId) return;
-      const gap = dayGap(assignedDate, dateStr);
-      if(gap <= 1) penalty += 10000;
-      else if(gap === 2) penalty += 4000;
-      else if(gap === 3) penalty += 600;
-    });
-
-    const prevWeekendOwner = weekIndex > 0 ? (weeks[weekIndex - 1].weekendOwner || '') : '';
-    if(prevWeekendOwner === personId){
-      if(weekdayIndex === 0) penalty += 10000; // Monday after weekend call
-      if(weekdayIndex === 1) penalty += 5000;  // Tuesday after weekend call
-    }
-
-    if(week.weekendOwner === personId){
-      if(weekdayIndex === 4) penalty += 10000; // Friday before own weekend
-      if(weekdayIndex === 3) penalty += 1000;  // Thursday before own weekend
-    }
-
-    return penalty;
-  }
-
-  function assignWeekdayNights(state, weeks, availability, options={}){
+  function assignWeekdayNights(state, weeks, availability){
     const store = initFairnessStore(state);
     const out = [];
     const map = {};
@@ -1317,12 +1291,8 @@ function exportMasterPDF(){
           if(hasConsecutiveNight(map,p.id,date)) return false;
           return true;
         }).sort((a,b) => {
-          const as = currentScore(store, a.id, 'night')
-            + callSpacingPenalty(map, a.id, date, week, idx, i, weeks)
-            + (options.stable ? stableBonusNight(state, date, a.id) : 0);
-          const bs = currentScore(store, b.id, 'night')
-            + callSpacingPenalty(map, b.id, date, week, idx, i, weeks)
-            + (options.stable ? stableBonusNight(state, date, b.id) : 0);
+          const as = currentScore(store, a.id, 'night');
+          const bs = currentScore(store, b.id, 'night');
           if(as !== bs) return as - bs;
           return a.id.localeCompare(b.id);
         });
@@ -1402,21 +1372,21 @@ function exportMasterPDF(){
     return issues;
   }
 
-  function generateSchedule(state, startDate, endDate, options={}){
+  function generateSchedule(state, startDate, endDate){
     const weeks = getWeeks(startDate, endDate);
     const availability = buildAvailability(state, weeks);
     assignMajorServices(state, weeks, availability);
     assignWeekendOwners(state, weeks, availability);
     applyPinnedAssignments(state, weeks);
-    const nights = assignWeekdayNights(state, weeks, availability, options);
+    const nights = assignWeekdayNights(state, weeks, availability);
     const fairnessSummary = summarizeFairness(state, weeks, nights);
     const validation = validateSchedule(state, weeks, nights);
     return { weeks, nightAssignments:nights, fairnessSummary, validation };
   }
 
-  function persistGeneratedDraft(startDate, endDate, options={}){
+  function persistGeneratedDraft(startDate, endDate){
     const state = window.AppState.loadState();
-    const result = generateSchedule(state, startDate, endDate, options);
+    const result = generateSchedule(state, startDate, endDate);
     state.settings.scheduleStart = startDate;
     state.settings.scheduleEnd = endDate;
     state.draftWeeks = result.weeks;
