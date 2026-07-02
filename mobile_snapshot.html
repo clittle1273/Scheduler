@@ -930,26 +930,64 @@ function assignMajorServices(state, weeks, availability){
   }
 
   function nightAssignmentsMap(nights){ return Object.fromEntries((nights||[]).map(n => [n.date, n.owner])); }
-  function hasConsecutiveNight(map, personId, dateStr){
-    const prev = iso(addDays(parseDate(dateStr), -1));
-    const next = iso(addDays(parseDate(dateStr), 1));
-    return map[prev] === personId || map[next] === personId;
+
+  // Call recovery / spacing rules.
+  // Weekend call is treated as a two-day call block (Sat/Sun).
+  // The generator first tries strict spacing, then relaxes only if needed to avoid leaving a date unfilled.
+  function callDatesForPerson(map, personId){
+    return Object.keys(map || {}).filter(date => map[date] === personId).sort();
   }
 
-  function assignWeekdayNights(state, weeks, availability){
+  function dayDistance(a, b){
+    return Math.abs(Math.round((parseDate(a) - parseDate(b)) / 86400000));
+  }
+
+  function hasCallWithinDays(map, personId, dateStr, days){
+    return callDatesForPerson(map, personId).some(existing => dayDistance(existing, dateStr) <= days);
+  }
+
+  function isPostWeekendMondayOrTuesday(map, personId, dateStr){
+    const d = parseDate(dateStr);
+    const dow = d.getDay(); // Mon=1 Tue=2
+    if(dow !== 1 && dow !== 2) return false;
+    const sat = iso(addDays(d, dow === 1 ? -2 : -3));
+    const sun = iso(addDays(d, dow === 1 ? -1 : -2));
+    return map[sat] === personId || map[sun] === personId;
+  }
+
+  function callRecoveryPenalty(map, personId, dateStr){
+    let penalty = 0;
+    const dates = callDatesForPerson(map, personId);
+    dates.forEach(existing => {
+      const dist = dayDistance(existing, dateStr);
+      if(dist === 0) penalty += 10000;
+      else if(dist === 1) penalty += 9000;   // consecutive call
+      else if(dist === 2) penalty += 4500;   // Monday/Wednesday, Sunday/Tuesday
+      else if(dist === 3) penalty += 80;     // acceptable only if fairness needs it
+      else if(dist === 4) penalty += 15;
+    });
+    if(isPostWeekendMondayOrTuesday(map, personId, dateStr)) penalty += 8000;
+    return penalty;
+  }
+
+  function assignWeekdayNights(state, weeks, availability, options={}){
     const store = initFairnessStore(state);
     const out = [];
     const map = {};
     const perMonth = {};
     const perWeek = {};
+    seedLockedNightAssignments(state, weeks, store, out, map, perMonth, perWeek);
+    seedLocumNightCalls(state, weeks, availability, store, out, map, perMonth, perWeek);
 
     weeks.forEach((week, idx) => {
+      if(week.locked) return;
       const mon = parseDate(week.weekStart);
       for(let i=0;i<5;i++){
         const date = iso(addDays(mon,i));
         const month = monthKey(date);
-        const prevWeekendOwner = i===0 && idx>0 ? weeks[idx-1].weekendOwner : '';
-        const candidates = state.physicians.filter(p => {
+        if(map[date]) continue;
+
+        const baseEligible = state.physicians.filter(p => {
           if(!p.nightEligible) return false;
           if(!availability[p.id][week.weekStart].nightAvailable) return false;
           if(hasRequest(state,p.id,'no_call',date,date) || hasRequest(state,p.id,'no_night_call',date,date) || hasVacation(state,p.id,date,date)) return false;
@@ -957,15 +995,32 @@ function assignMajorServices(state, weeks, availability){
           if((perWeek[`${p.id}:${week.weekStart}`]||0) >= 2) return false;
           if(week.weekendOwner === p.id && (perWeek[`${p.id}:${week.weekStart}`]||0) >= 1) return false;
           if(i===4 && week.weekendOwner === p.id) return false;
-          if(i===0 && prevWeekendOwner === p.id) return false;
-          if(hasConsecutiveNight(map,p.id,date)) return false;
           return true;
-        }).sort((a,b) => {
-          const as = currentScore(store, a.id, 'night');
-          const bs = currentScore(store, b.id, 'night');
+        });
+
+        // Strict pass: avoid post-weekend Monday/Tuesday and avoid any call within 48 hours.
+        let candidates = baseEligible.filter(p => {
+          if(isPostWeekendMondayOrTuesday(map, p.id, date)) return false;
+          if(hasCallWithinDays(map, p.id, date, 2)) return false;
+          return true;
+        });
+
+        // Fallback pass: keep true consecutive days forbidden, but allow 48h/post-weekend only as last resort.
+        if(!candidates.length){
+          candidates = baseEligible.filter(p => !hasCallWithinDays(map, p.id, date, 1));
+        }
+
+        candidates = candidates.sort((a,b) => {
+          const as = currentScore(store, a.id, 'night')
+            + callRecoveryPenalty(map, a.id, date)
+            + (options.stable ? stableBonusNight(state, date, a.id) : 0);
+          const bs = currentScore(store, b.id, 'night')
+            + callRecoveryPenalty(map, b.id, date)
+            + (options.stable ? stableBonusNight(state, date, b.id) : 0);
           if(as !== bs) return as - bs;
           return a.id.localeCompare(b.id);
         });
+
         const chosen = candidates[0];
         out.push({ date, owner: chosen ? chosen.id : '', weekend:false, weekStart:week.weekStart });
         if(chosen){
@@ -975,8 +1030,8 @@ function assignMajorServices(state, weeks, availability){
           addAssignmentChargeSimple(store, state, chosen.id, 'night');
         }
       }
-      out.push({ date: week.weekendStart, owner: week.weekendOwner || '', weekend:true, weekStart:week.weekStart });
-      out.push({ date: week.weekendEnd, owner: week.weekendOwner || '', weekend:true, weekStart:week.weekStart });
+      if(!map[week.weekendStart]) out.push({ date: week.weekendStart, owner: week.weekendOwner || '', weekend:true, weekStart:week.weekStart });
+      if(!map[week.weekendEnd]) out.push({ date: week.weekendEnd, owner: week.weekendOwner || '', weekend:true, weekStart:week.weekStart });
       if(week.weekendOwner){ map[week.weekendStart] = week.weekendOwner; map[week.weekendEnd] = week.weekendOwner; }
     });
     return out;
