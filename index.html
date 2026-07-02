@@ -949,6 +949,24 @@ function assignMajorServices(state, weeks, availability){
     return penalty;
   }
 
+  function violatesHardPhysicianCallSpacing(state, map, personId, dateStr, week, dayIndex, weeks, idx){
+    // Justin rule: for regular physicians only, do not place call within 48 hours of another call.
+    // Locum-selected dates are not constrained by this rule.
+    if(isLocumId(state, personId) || !isPhysicianId(state, personId)) return false;
+
+    for(const [assignedDate, owner] of Object.entries(map || {})){
+      if(owner !== personId) continue;
+      if(isLocumId(state, owner)) continue;
+      const gap = Math.abs(daysBetween(dateStr, assignedDate));
+      if(gap <= 2) return true;
+    }
+
+    const prevWeekendOwner = idx > 0 ? weeks[idx-1].weekendOwner : '';
+    if(prevWeekendOwner === personId && isPhysicianId(state, prevWeekendOwner) && dayIndex <= 1) return true;
+    if(week.weekendOwner === personId && isPhysicianId(state, week.weekendOwner) && dayIndex >= 3) return true;
+    return false;
+  }
+
   function assignWeekdayNights(state, weeks, availability){
     const store = initFairnessStore(state);
     const out = [];
@@ -972,13 +990,14 @@ function assignMajorServices(state, weeks, availability){
           return true;
         });
 
-        const strictCandidates = baseCandidates.filter(p => callSpacingPenalty(state, map, p.id, date, week, i, weeks, idx) === 0);
-        const candidates = (strictCandidates.length ? strictCandidates : baseCandidates).sort((a,b) => {
-          const as = currentScore(store, a.id, 'night') + callSpacingPenalty(state, map, a.id, date, week, i, weeks, idx);
-          const bs = currentScore(store, b.id, 'night') + callSpacingPenalty(state, map, b.id, date, week, i, weeks, idx);
-          if(as !== bs) return as - bs;
-          return a.id.localeCompare(b.id);
-        });
+        const candidates = baseCandidates
+          .filter(p => !violatesHardPhysicianCallSpacing(state, map, p.id, date, week, i, weeks, idx))
+          .sort((a,b) => {
+            const as = currentScore(store, a.id, 'night') + callSpacingPenalty(state, map, a.id, date, week, i, weeks, idx);
+            const bs = currentScore(store, b.id, 'night') + callSpacingPenalty(state, map, b.id, date, week, i, weeks, idx);
+            if(as !== bs) return as - bs;
+            return a.id.localeCompare(b.id);
+          });
 
         const chosen = candidates[0];
         out.push({ date, owner: chosen ? chosen.id : '', weekend:false, weekStart:week.weekStart });
