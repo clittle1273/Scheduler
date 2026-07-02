@@ -963,6 +963,10 @@ function assignMajorServices(state, weeks, availability){
   function nightAssignmentsMap(nights){ return Object.fromEntries((nights||[]).map(n => [n.date, n.owner])); }
   function isLocumId(state, personId){ return (state.locums || []).some(l => l.id === personId); }
   function isPhysicianId(state, personId){ return (state.physicians || []).some(p => p.id === personId); }
+  function isBFAllowedWeekdayNight(week, personId){
+    // BF weekday night call only on weeks where BF is assigned to Nephro. Weekend/locum rules are separate.
+    return personId !== 'BF' || ((week && week.services && week.services.Nephro) === 'BF');
+  }
   function daysBetween(dateA, dateB){
     return Math.round((parseDate(dateA) - parseDate(dateB)) / 86400000);
   }
@@ -1021,6 +1025,7 @@ function assignMajorServices(state, weeks, availability){
           if((perMonth[`${p.id}:${month}`]||0) >= 4) return false;
           if((perWeek[`${p.id}:${week.weekStart}`]||0) >= 2) return false;
           if(week.weekendOwner === p.id && (perWeek[`${p.id}:${week.weekStart}`]||0) >= 1) return false;
+          if(!isBFAllowedWeekdayNight(week, p.id)) return false;
           return true;
         });
 
@@ -1175,6 +1180,8 @@ function assignMajorServices(state, weeks, availability){
         return person.weekendEligible;
       }
       if(person.type === 'locum') return person.callDates?.includes(nightEntry.date);
+      const nightWeek = (state.draftWeeks || []).find(w => w.weekStart === nightEntry.weekStart);
+      if(!isBFAllowedWeekdayNight(nightWeek, person.id)) return false;
       return person.nightEligible && !hasRequest(state, person.id,'no_call',nightEntry.date,nightEntry.date) && !hasRequest(state, person.id,'no_night_call',nightEntry.date,nightEntry.date) && !hasVacation(state, person.id,nightEntry.date,nightEntry.date);
     });
   }

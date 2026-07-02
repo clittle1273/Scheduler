@@ -1288,6 +1288,10 @@ function exportMasterPDF(){
   function nightAssignmentsMap(nights){ return Object.fromEntries((nights||[]).map(n => [n.date, n.owner])); }
   function isLocumId(state, personId){ return (state.locums || []).some(l => l.id === personId); }
   function isPhysicianId(state, personId){ return (state.physicians || []).some(p => p.id === personId); }
+  function isBFAllowedWeekdayNight(week, personId){
+    // BF weekday night call only on weeks where BF is assigned to Nephro. Weekend/locum rules are separate.
+    return personId !== 'BF' || ((week && week.services && week.services.Nephro) === 'BF');
+  }
   function daysBetween(dateA, dateB){
     return Math.round((parseDate(dateA) - parseDate(dateB)) / 86400000);
   }
@@ -1349,6 +1353,7 @@ function exportMasterPDF(){
           if((perMonth[`${p.id}:${month}`]||0) >= 4) return false;
           if((perWeek[`${p.id}:${week.weekStart}`]||0) >= 2) return false;
           if(week.weekendOwner === p.id && (perWeek[`${p.id}:${week.weekStart}`]||0) >= 1) return false;
+          if(!isBFAllowedWeekdayNight(week, p.id)) return false;
           return true;
         });
 
@@ -1423,6 +1428,8 @@ function exportMasterPDF(){
     nights.filter(n => !n.weekend).forEach(n => {
       if(!n.owner){ issues.push({ level:'warning', code:'night-unfilled', message:`Night call unfilled on ${n.date}`, date:n.date }); return; }
       if(map[n.owner]?.type !== 'locum' && !canDoService(map[n.owner], 'Night')) issues.push({ level:'error', code:'night-eligibility', message:`${n.owner} not eligible for night call`, date:n.date });
+      const nightWeek = weeks.find(w => w.weekStart === n.weekStart);
+      if(n.owner === 'BF' && !isBFAllowedWeekdayNight(nightWeek, n.owner)) issues.push({ level:'error', code:'bf-nephro-night-rule', message:'BF assigned weekday night call outside a BF Nephro week', date:n.date });
       const prev = iso(addDays(parseDate(n.date), -1));
       if(nightMap[prev] === n.owner) issues.push({ level:'error', code:'back-to-back-night-calls', message:`${n.owner} has back to back night calls`, date:n.date });
       const mk = `${n.owner}:${monthKey(n.date)}`;
@@ -1503,6 +1510,8 @@ function exportMasterPDF(){
         return person.weekendEligible;
       }
       if(person.type === 'locum') return person.callDates?.includes(nightEntry.date);
+      const nightWeek = (state.draftWeeks || []).find(w => w.weekStart === nightEntry.weekStart);
+      if(!isBFAllowedWeekdayNight(nightWeek, person.id)) return false;
       return person.nightEligible && !hasRequest(state, person.id,'no_call',nightEntry.date,nightEntry.date) && !hasRequest(state, person.id,'no_night_call',nightEntry.date,nightEntry.date) && !hasVacation(state, person.id,nightEntry.date,nightEntry.date);
     });
   }
