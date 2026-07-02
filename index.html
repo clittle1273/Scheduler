@@ -961,7 +961,7 @@ function assignMajorServices(state, weeks, availability){
     return penalty;
   }
 
-  function assignWeekdayNights(state, weeks, availability){
+  function assignWeekdayNights(state, weeks, availability, options={}){
     const store = initFairnessStore(state);
     const out = [];
     const map = {};
@@ -1071,21 +1071,21 @@ function assignMajorServices(state, weeks, availability){
     return issues;
   }
 
-  function generateSchedule(state, startDate, endDate){
+  function generateSchedule(state, startDate, endDate, options={}){
     const weeks = getWeeks(startDate, endDate);
     const availability = buildAvailability(state, weeks);
     assignMajorServices(state, weeks, availability);
     assignWeekendOwners(state, weeks, availability);
     applyPinnedAssignments(state, weeks);
-    const nights = assignWeekdayNights(state, weeks, availability);
+    const nights = assignWeekdayNights(state, weeks, availability, options);
     const fairnessSummary = summarizeFairness(state, weeks, nights);
     const validation = validateSchedule(state, weeks, nights);
     return { weeks, nightAssignments:nights, fairnessSummary, validation };
   }
 
-  function persistGeneratedDraft(startDate, endDate){
+  function persistGeneratedDraft(startDate, endDate, options={}){
     const state = window.AppState.loadState();
-    const result = generateSchedule(state, startDate, endDate);
+    const result = generateSchedule(state, startDate, endDate, options);
     state.settings.scheduleStart = startDate;
     state.settings.scheduleEnd = endDate;
     state.draftWeeks = result.weeks;

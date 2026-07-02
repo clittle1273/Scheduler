@@ -1,3 +1,5 @@
+Generate button repair package.
+
 Upload these files over the existing GitHub files:
 - admin.html
 - index.html
@@ -8,8 +10,8 @@ Upload these files over the existing GitHub files:
 
 Do not replace supabase.js or state.js.
 
-Fixes included:
-- Removes the JavaScript syntax errors that prevented Generate from working.
-- Adds call spacing penalties for Monday/Tuesday after weekend call.
-- Penalizes call assignments within 2 to 3 days of another call.
-- Preserves existing Supabase script reference and storage behavior.
+Fixes:
+- Runtime error: options is not defined during Generate
+- Runtime error in separate scheduler.js from stray top-level state reference
+- Keeps call spacing changes
+- Does not change Supabase storage files

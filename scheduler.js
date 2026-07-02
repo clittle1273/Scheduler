@@ -343,9 +343,6 @@ function applyCarRotation(state, weeks, availability){
     });
   }
 
-    const priorWeeks = state.draftWeeks || [];
-    const priorMap = Object.fromEntries(priorWeeks.map(w => [w.weekStart, w]));
-    
 
   function currentScore(store, id, bucket){
     if(!store[id]) return 999;
