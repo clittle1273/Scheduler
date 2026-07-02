@@ -292,25 +292,25 @@ thead .service-Weekend{background:var(--svc-weekend)!important}
 
   const physicians = [
     { id:'CL', name:'CL', type:'physician', services:['ICU','GIM','CAR1','CAR2','Echo','Weekend','Night','OP'], echoEligible:true, weekendEligible:true, nightEligible:true, opEligible:true,
-      fairnessWeights:{ weeklyServices:1, icu:1, weekends:1, weekdayCall:1 } },
+      fairnessWeights:{ weeklyServices:1, icu:1, weekends:1, weekdayCall:1, echo:1 } },
     { id:'JK', name:'JK', type:'physician', services:['ICU','GIM','CAR1','CAR2','Weekend','Night','OP'], echoEligible:false, weekendEligible:true, nightEligible:true, opEligible:true,
-      fairnessWeights:{ weeklyServices:1, icu:1, weekends:1, weekdayCall:1 } },
+      fairnessWeights:{ weeklyServices:1, icu:1, weekends:1, weekdayCall:1, echo:1 } },
     { id:'DK', name:'DK', type:'physician', services:['ICU','GIM','CAR1','CAR2','Echo','Weekend','Night','OP'], echoEligible:true, weekendEligible:true, nightEligible:true, opEligible:true,
-      fairnessWeights:{ weeklyServices:1, icu:1, weekends:1, weekdayCall:1 } },
+      fairnessWeights:{ weeklyServices:1, icu:1, weekends:1, weekdayCall:1, echo:1 } },
     { id:'DC', name:'DC', type:'physician', services:['ICU','GIM','CAR1','CAR2','Echo','Weekend','Night','OP'], echoEligible:true, weekendEligible:true, nightEligible:true, opEligible:true,
-      fairnessWeights:{ weeklyServices:0.5, icu:0.5, weekends:0.5, weekdayCall:0.5 } },
+      fairnessWeights:{ weeklyServices:0.5, icu:0.5, weekends:0.5, weekdayCall:0.5, echo:1 } },
     { id:'CD', name:'CD', type:'physician', services:['ICU','GIM','CAR1','CAR2','Weekend','Night','OP'], echoEligible:false, weekendEligible:true, nightEligible:true, opEligible:true,
-      fairnessWeights:{ weeklyServices:1, icu:1, weekends:1, weekdayCall:1 } },
+      fairnessWeights:{ weeklyServices:1, icu:1, weekends:1, weekdayCall:1, echo:1 } },
     { id:'JL', name:'JL', type:'physician', services:['ICU','GIM','CAR1','Weekend','Night','OP'], echoEligible:false, weekendEligible:true, nightEligible:true, opEligible:true,
-      fairnessWeights:{ weeklyServices:1, icu:1, weekends:1, weekdayCall:1 } },
+      fairnessWeights:{ weeklyServices:1, icu:1, weekends:1, weekdayCall:1, echo:1 } },
     { id:'BB', name:'BB', type:'physician', services:['ICU','Resp','Weekend','Night'], echoEligible:false, weekendEligible:true, nightEligible:true, opEligible:false,
       fairnessWeights:{ weeklyServices:1, icu:0.8, weekends:1, weekdayCall:0.8 } },
     { id:'BF', name:'BF', type:'physician', services:['Nephro','Weekend','Night'], echoEligible:false, weekendEligible:true, nightEligible:true, opEligible:false,
-      fairnessWeights:{ weeklyServices:1, icu:1, weekends:1, weekdayCall:1 } },
+      fairnessWeights:{ weeklyServices:1, icu:1, weekends:1, weekdayCall:1, echo:1 } },
     { id:'SM', name:'SM', type:'physician', services:['Nephro'], echoEligible:false, weekendEligible:false, nightEligible:false, opEligible:false,
-      fairnessWeights:{ weeklyServices:1, icu:1, weekends:1, weekdayCall:1 } },
+      fairnessWeights:{ weeklyServices:1, icu:1, weekends:1, weekdayCall:1, echo:1 } },
     { id:'TR', name:'TR', type:'physician', services:['Resp'], echoEligible:false, weekendEligible:false, nightEligible:false, opEligible:false,
-      fairnessWeights:{ weeklyServices:1, icu:1, weekends:1, weekdayCall:1 } }
+      fairnessWeights:{ weeklyServices:1, icu:1, weekends:1, weekdayCall:1, echo:1 } }
   ];
 
   const locums = [
@@ -608,6 +608,7 @@ function loadState(){
     if(bucket === 'icu') return w.icu || 1;
     if(bucket === 'weekend') return w.weekends || 1;
     if(bucket === 'night') return w.weekdayCall || 1;
+    if(bucket === 'echo') return w.echo || 1;
     return 1;
   }
 
@@ -872,19 +873,49 @@ function assignMajorServices(state, weeks, availability){
     });
 
     // Echo after major services. Keep deterministic rotation, but only among eligible paired holders.
+    const echoOrder = ['CL','DK','DC'];
+    const echoCounts = Object.fromEntries(echoOrder.map(id => [id, 0]));
+    function echoLoadScore(personId){
+      const p = physicianMap(state)[personId];
+      return (echoCounts[personId] || 0) / fairnessWeight(p, 'echo');
+    }
+    function tryMakeEchoEligible(week, person){
+      if(!person || !person.echoEligible) return false;
+      if(!availability[person.id]?.[week.weekStart]?.serviceAvailable) return false;
+      if(getPrimaryServiceForPerson(week, person.id)) return ECHO_ALLOWED.includes(getPrimaryServiceForPerson(week, person.id));
+      const assigned = peopleAssignedThisWeek(week);
+      if(assigned[person.id]) return false;
+      const openOp = ['OP3','OP2','OP1'].find(s => !week.services[s] && canDoService(person, s));
+      if(openOp){
+        week.services[openOp] = person.id;
+        addAssignmentChargeSimple(store, state, person.id, 'service', openOp);
+        return true;
+      }
+      return false;
+    }
+
     weeks.forEach((week, idx) => {
+      const preferred = echoOrder[idx % echoOrder.length];
+      const lowestEchoId = echoOrder.slice().sort((a,b) => {
+        const diff = echoLoadScore(a) - echoLoadScore(b);
+        if(diff !== 0) return diff;
+        return echoOrder.indexOf(a) - echoOrder.indexOf(b);
+      })[0];
+      const preferredPerson = physicianMap(state)[lowestEchoId || preferred];
+      tryMakeEchoEligible(week, preferredPerson);
+
       const echoCandidates = state.physicians.filter(p => p.echoEligible && availability[p.id][week.weekStart].serviceAvailable && ECHO_ALLOWED.includes(getPrimaryServiceForPerson(week,p.id)))
         .sort((a,b) => {
-          const as = currentScore(store, a.id, 'service');
-          const bs = currentScore(store, b.id, 'service');
+          const as = echoLoadScore(a.id);
+          const bs = echoLoadScore(b.id);
           if(as !== bs) return as - bs;
+          const ap = echoOrder.indexOf(a.id); const bp = echoOrder.indexOf(b.id);
+          if(ap !== bp) return (ap === -1 ? 99 : ap) - (bp === -1 ? 99 : bp);
           return a.id.localeCompare(b.id);
         });
       if(echoCandidates.length){
-        const order = ['CL','DK','DC'];
-        const preferred = order[idx % order.length];
-        const match = echoCandidates.find(p => p.id === preferred);
-        week.services.Echo = (match || echoCandidates[0]).id;
+        week.services.Echo = echoCandidates[0].id;
+        if(echoCounts[week.services.Echo] != null) echoCounts[week.services.Echo] += 1;
       } else {
         week.services.Echo = '';
       }
