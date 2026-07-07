@@ -554,8 +554,15 @@ function applyCarRotation(state, weeks, availability){
         const prev2Owner = idx > 1 ? weeks[idx-2].services?.[service] : '';
 
         let candidates = state.physicians.filter(p => {
+          const bbIcuOnRespWeek = service === 'ICU' && p.id === 'BB' && week.services?.Resp === 'BB';
           if(!canDoService(p, service)) return false;
-          if(assigned[p.id]) return false;
+          if(service === 'ICU' && p.id === 'BB' && week.services?.Resp !== 'BB') return false;
+          if(service === 'ICU' && p.id === 'BB'){
+            const bbIcuDone = store.BB?.serviceCounts?.ICU || 0;
+            const bbIcuTarget = Math.max(1, Math.round(icuTargets.BB || 0));
+            if(bbIcuDone >= bbIcuTarget) return false;
+          }
+          if(assigned[p.id] && !bbIcuOnRespWeek) return false;
           if(!availability[p.id][week.weekStart].serviceAvailable) return false;
           if((service === 'CAR1' || service === 'CAR2') && (p.id === prevOwner || p.id === prev2Owner)) return false;
           return true;

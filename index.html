@@ -822,8 +822,15 @@ function assignMajorServices(state, weeks, availability){
       weeks.forEach((week, idx) => {
         const assigned = peopleAssignedThisWeek(week);
         const candidates = state.physicians.filter(p => {
+          const bbIcuOnRespWeek = service === 'ICU' && p.id === 'BB' && week.services?.Resp === 'BB';
           if(!canDoService(p, service)) return false;
-          if(assigned[p.id]) return false;
+          if(service === 'ICU' && p.id === 'BB' && week.services?.Resp !== 'BB') return false;
+          if(service === 'ICU' && p.id === 'BB'){
+            const bbIcuDone = store.BB?.serviceCounts?.ICU || 0;
+            const bbIcuTarget = Math.max(1, Math.round(icuTargets.BB || 0));
+            if(bbIcuDone >= bbIcuTarget) return false;
+          }
+          if(assigned[p.id] && !bbIcuOnRespWeek) return false;
           if(!availability[p.id][week.weekStart].serviceAvailable) return false;
           return true;
         }).sort((a,b) => {
@@ -832,6 +839,16 @@ function assignMajorServices(state, weeks, availability){
           const bPref = service === 'Resp' ? (availability[b.id][week.weekStart].respRequested ? -1 : 0)
             : service === 'Nephro' ? (availability[b.id][week.weekStart].nephroRequested ? -1 : 0) : 0;
           if(aPref !== bPref) return aPref - bPref;
+
+          if(service === 'ICU'){
+            const targetA = Math.max(0.001, icuTargets[a.id] || 0.001);
+            const targetB = Math.max(0.001, icuTargets[b.id] || 0.001);
+            const doneA = store[a.id]?.serviceCounts?.ICU || 0;
+            const doneB = store[b.id]?.serviceCounts?.ICU || 0;
+            const completionA = doneA / targetA;
+            const completionB = doneB / targetB;
+            if(completionA !== completionB) return completionA - completionB;
+          }
 
           const aDef = serviceDeficitScore(store, a.id, service, requiredTargets) + serviceRecentPenalty(weeks, week.weekStart, a.id, service);
           const bDef = serviceDeficitScore(store, b.id, service, requiredTargets) + serviceRecentPenalty(weeks, week.weekStart, b.id, service);
