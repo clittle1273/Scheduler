@@ -376,6 +376,15 @@ function applyCarRotation(state, weeks, availability){
     return avail;
   }
 
+
+  function isBlockedForServiceRequest(availability, personId, weekStart, service){
+    const av = availability?.[personId]?.[weekStart];
+    if(!av) return false;
+    if(service === 'GIM' && av.noGimWeek) return true;
+    if(service === 'ICU' && av.noIcuWeek) return true;
+    return false;
+  }
+
   function peopleAssignedThisWeek(week){
     const ids = {};
     MAJOR_SERVICES.forEach(service => { if(week.services[service]) ids[week.services[service]] = service; });
@@ -453,8 +462,7 @@ function applyCarRotation(state, weeks, availability){
       if(!canDoService(p, service)) return false;
       if(assigned[p.id]) return false;
       if(!availability[p.id][week.weekStart].serviceAvailable) return false;
-      if(service === 'GIM' && availability[p.id][week.weekStart].noGimWeek) return false;
-      if(service === 'ICU' && availability[p.id][week.weekStart].noIcuWeek) return false;
+      if(isBlockedForServiceRequest(availability, p.id, week.weekStart, service)) return false;
           // Simple BB rule: BB can only do ICU on weeks where BB is already assigned Resp.
           if(service === 'ICU' && p.id === 'BB' && week.services?.Resp !== 'BB') return false;
       return true;
@@ -557,6 +565,7 @@ function applyCarRotation(state, weeks, availability){
           if(!canDoService(p, service)) return false;
           if(assigned[p.id]) return false;
           if(!availability[p.id][week.weekStart].serviceAvailable) return false;
+          if(isBlockedForServiceRequest(availability, p.id, week.weekStart, service)) return false;
           if((service === 'CAR1' || service === 'CAR2') && (p.id === prevOwner || p.id === prev2Owner)) return false;
           return true;
         });
@@ -566,6 +575,7 @@ function applyCarRotation(state, weeks, availability){
             if(!canDoService(p, service)) return false;
             if(assigned[p.id]) return false;
             if(!availability[p.id][week.weekStart].serviceAvailable) return false;
+            if(isBlockedForServiceRequest(availability, p.id, week.weekStart, service)) return false;
             return true;
           });
         }
@@ -686,6 +696,7 @@ function applyCarRotation(state, weeks, availability){
           if(!canDoService(p, service)) return false;
           if(assigned[p.id]) return false;
           if(!availability[p.id][week.weekStart].serviceAvailable) return false;
+          if(isBlockedForServiceRequest(availability, p.id, week.weekStart, service)) return false;
           if((service === 'CAR1' || service === 'CAR2') && (p.id === prevOwner || p.id === prev2Owner)) return false;
           return true;
         });
@@ -695,6 +706,7 @@ function applyCarRotation(state, weeks, availability){
             if(!canDoService(p, service)) return false;
             if(assigned[p.id]) return false;
             if(!availability[p.id][week.weekStart].serviceAvailable) return false;
+            if(isBlockedForServiceRequest(availability, p.id, week.weekStart, service)) return false;
             return true;
           });
         }
@@ -891,8 +903,8 @@ function applyCarRotation(state, weeks, availability){
         if(hasVacation(state, p.id, week.weekStart, week.weekendEnd)) reasons.push('away/vacation that week');
         else reasons.push('not service-available that week');
       }
-      if(service === 'ICU' && av?.noIcuWeek) reasons.push('requested no ICU');
-      if(service === 'GIM' && av?.noGimWeek) reasons.push('requested no GIM');
+      if(service === 'ICU' && av?.noIcuWeek) reasons.push('requested no ICU only');
+      if(service === 'GIM' && av?.noGimWeek) reasons.push('requested no GIM only');
       if(service === 'Resp' && av && !av.respRequested && p.id === 'BB') reasons.push('BB Resp not specifically requested this week');
       if(!reasons.length) reasons.push('eligible and available — unfilled may indicate assignment logic gap');
       return p.id + ': ' + reasons.join(', ');
