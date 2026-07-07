@@ -819,7 +819,39 @@ function loadState(){
     }
   }
 
-  
+function enforceHardNoGimNoIcuBlocks(state, weeks, availability){
+  // Final safety guard: No GIM Week and No ICU Week are absolute blocks for those services only.
+  ['ICU','GIM'].forEach(service => {
+    weeks.forEach((week, idx) => {
+      const owner = (week.services || {})[service] || '';
+      if(!owner) return;
+      if(!isBlockedForServiceRequest(availability, owner, week.weekStart, service)) return;
+
+      console.warn(`Blocked invalid ${service} assignment: ${owner} on ${week.weekStart}`);
+      week.services[service] = '';
+      const assigned = peopleAssignedThisWeek(week);
+      const prevOwner = idx > 0 ? weeks[idx-1].services?.[service] : '';
+      const prev2Owner = idx > 1 ? weeks[idx-2].services?.[service] : '';
+
+      const replacement = state.physicians
+        .filter(p => {
+          if(!canDoService(p, service)) return false;
+          if(assigned[p.id]) return false;
+          if(!availability[p.id]?.[week.weekStart]?.serviceAvailable) return false;
+          if(isBlockedForServiceRequest(availability, p.id, week.weekStart, service)) return false;
+          return true;
+        })
+        .sort((a,b) => {
+          const aRecent = (a.id === prevOwner || a.id === prev2Owner) ? 0.5 : 0;
+          const bRecent = (b.id === prevOwner || b.id === prev2Owner) ? 0.5 : 0;
+          if(aRecent !== bRecent) return aRecent - bRecent;
+          return a.id.localeCompare(b.id);
+        })[0];
+
+      if(replacement) week.services[service] = replacement.id;
+    });
+  });
+}
 
 function assignMajorServices(state, weeks, availability){
     const store = initFairnessStore(state);
