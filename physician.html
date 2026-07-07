@@ -856,11 +856,17 @@ function assignMajorServices(state, weeks, availability){
         const candidates = state.physicians.filter(p => {
           if(!canDoService(p, service)) return false;
           // BB ICU rule: BB remains ICU-eligible at 0.8 FTE, but only on weeks
-          // where Resp is either already BB or still open and can be paired with BB.
-          // This avoids excluding BB from ICU just because ICU is assigned before Resp.
+          // where Resp was already assigned to BB first. Resp never gets assigned just
+          // to create an ICU slot. Once BB reaches his calculated ICU cap, do not keep
+          // assigning ICU on every BB Resp week.
           const bbRespIcuWeek = service === 'ICU' && p.id === 'BB' && week.services.Resp === 'BB';
-          const bbRespIcuPairable = service === 'ICU' && p.id === 'BB' && !week.services.Resp && canDoService(p, 'Resp') && availability[p.id][week.weekStart].serviceAvailable;
-          if(service === 'ICU' && p.id === 'BB' && !(bbRespIcuWeek || bbRespIcuPairable)) return false;
+          if(service === 'ICU' && p.id === 'BB'){
+            const bbIcuTarget = icuTargets?.BB ?? requiredTargets?.ICU?.BB ?? 0;
+            const bbIcuCap = Math.max(0, Math.ceil(bbIcuTarget - 0.01));
+            const bbIcuDone = store.BB?.serviceCounts?.ICU || 0;
+            if(!bbRespIcuWeek) return false;
+            if(bbIcuDone >= bbIcuCap) return false;
+          }
           if(assigned[p.id] && !bbRespIcuWeek) return false;
           if(!availability[p.id][week.weekStart].serviceAvailable) return false;
           return true;
@@ -872,20 +878,19 @@ function assignMajorServices(state, weeks, availability){
           if(aPref !== bPref) return aPref - bPref;
 
           // BB Resp-first / ICU quota rule:
-          // 1) Resp requests still win first because aPref/bPref are compared above.
-          // 2) If there is no competing Resp request, prefer giving BB Resp while he is
-          //    under his 0.8-FTE ICU target, because BB is only allowed ICU on Resp weeks.
-          // 3) Once BB has Resp, forcefully prefer him for ICU until his ICU target is met.
+          // 1) Resp is scheduled first and BB Resp requests still win through aPref/bPref.
+          // 2) Do not assign BB to Resp merely to satisfy ICU.
+          // 3) If BB already has Resp and is still below his ICU cap, strongly prefer
+          //    pairing ICU with that Resp week, but stop once the cap is reached.
           const bbIcuTarget = icuTargets?.BB ?? requiredTargets?.ICU?.BB ?? 0;
+          const bbIcuCap = Math.max(0, Math.ceil(bbIcuTarget - 0.01));
           const bbIcuDone = store.BB?.serviceCounts?.ICU || 0;
-          const bbNeedsIcu = bbIcuDone + 0.01 < bbIcuTarget;
-          const aBbRespForIcuBonus = service === 'Resp' && a.id === 'BB' && bbNeedsIcu ? -1000 : 0;
-          const bBbRespForIcuBonus = service === 'Resp' && b.id === 'BB' && bbNeedsIcu ? -1000 : 0;
-          const aBbRespIcuBonus = service === 'ICU' && a.id === 'BB' && week.services.Resp === 'BB' && bbNeedsIcu ? -1000 : 0;
-          const bBbRespIcuBonus = service === 'ICU' && b.id === 'BB' && week.services.Resp === 'BB' && bbNeedsIcu ? -1000 : 0;
+          const bbCanTakeIcu = bbIcuDone < bbIcuCap;
+          const aBbRespIcuBonus = service === 'ICU' && a.id === 'BB' && week.services.Resp === 'BB' && bbCanTakeIcu ? -50 : 0;
+          const bBbRespIcuBonus = service === 'ICU' && b.id === 'BB' && week.services.Resp === 'BB' && bbCanTakeIcu ? -50 : 0;
 
-          const aDef = serviceDeficitScore(store, a.id, service, requiredTargets) + serviceRecentPenalty(weeks, week.weekStart, a.id, service) + aBbRespForIcuBonus + aBbRespIcuBonus;
-          const bDef = serviceDeficitScore(store, b.id, service, requiredTargets) + serviceRecentPenalty(weeks, week.weekStart, b.id, service) + bBbRespForIcuBonus + bBbRespIcuBonus;
+          const aDef = serviceDeficitScore(store, a.id, service, requiredTargets) + serviceRecentPenalty(weeks, week.weekStart, a.id, service) + aBbRespIcuBonus;
+          const bDef = serviceDeficitScore(store, b.id, service, requiredTargets) + serviceRecentPenalty(weeks, week.weekStart, b.id, service) + bBbRespIcuBonus;
           if(aDef !== bDef) return aDef - bDef;
 
           const aOverall = overallWeeklyBurden(store, a.id);
