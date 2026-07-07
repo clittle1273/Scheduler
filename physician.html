@@ -1169,8 +1169,30 @@ function assignMajorServices(state, weeks, availability){
     };
   }
 
+
+
+  function explainUnfilledRequiredService(state, weeks, week, service, availability){
+    const assigned = peopleAssignedThisWeek(week);
+    return (state.physicians || []).map(p => {
+      const reasons = [];
+      if(!canDoService(p, service)) reasons.push('not eligible for ' + service);
+      if(assigned[p.id]) reasons.push('already assigned ' + assigned[p.id]);
+      const av = availability?.[p.id]?.[week.weekStart];
+      if(!av || av.serviceAvailable === false){
+        if(hasVacation(state, p.id, week.weekStart, week.weekendEnd)) reasons.push('away/vacation that week');
+        else reasons.push('not service-available that week');
+      }
+      if(service === 'ICU' && av?.noIcuWeek) reasons.push('requested no ICU');
+      if(service === 'GIM' && av?.noGimWeek) reasons.push('requested no GIM');
+      if(service === 'Resp' && av && !av.respRequested && p.id === 'BB') reasons.push('BB Resp not specifically requested this week');
+      if(!reasons.length) reasons.push('eligible and available — unfilled may indicate assignment logic gap');
+      return p.id + ': ' + reasons.join(', ');
+    }).join(' | ');
+  }
+
   function validateSchedule(state, weeks, nights){
     const map = personMap(state);
+    const availability = buildAvailability(state, weeks || []);
     const issues = [];
     const nightMap = nightAssignmentsMap(nights);
     const weekdayMonthCounts = {};
@@ -1181,7 +1203,13 @@ function assignMajorServices(state, weeks, availability){
       const assignedPeople = {};
       MAJOR_SERVICES.forEach(service => {
         const owner = week.services[service];
-        if(!owner){ if(!OPTIONAL_OP_SERVICES.includes(service)) issues.push({ level:'warning', code:'service-unfilled', message:`${service} unfilled`, weekStart:week.weekStart }); return; }
+        if(!owner){
+          if(!OPTIONAL_OP_SERVICES.includes(service)){
+            const details = explainUnfilledRequiredService(state, weeks, week, service, availability);
+            issues.push({ level:'warning', code:'service-unfilled-debug', message:`${service} unfilled for ${week.weekStart}. Rule audit: ${details}`, weekStart:week.weekStart });
+          }
+          return;
+        }
         if(!canDoService(map[owner], service)) issues.push({ level:'error', code:'service-eligibility', message:`${owner} not eligible for ${service}`, weekStart:week.weekStart });
         if(assignedPeople[owner]) issues.push({ level:'error', code:'double-major-service', message:`${owner} has multiple major services`, weekStart:week.weekStart });
         assignedPeople[owner] = service;
