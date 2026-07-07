@@ -1,0 +1,1 @@
+Fix: weekly services and weekday night call now check Mon-Fri availability only. Weekend away dates no longer make a physician unavailable for the preceding weekday services. Weekend availability still checks weekend dates separately.

@@ -707,8 +707,8 @@ function loadState(){
       avail[person.id] = {};
       weeks.forEach(week => {
         avail[person.id][week.weekStart] = {
-          serviceAvailable: !hasVacation(state, person.id, week.weekStart, week.weekendEnd),
-          nightAvailable: !hasVacation(state, person.id, week.weekStart, week.weekendEnd) && !hasRequest(state, person.id,'no_call',week.weekStart, week.weekEnd) && !hasRequest(state, person.id,'no_night_call',week.weekStart, week.weekEnd),
+          serviceAvailable: !hasVacation(state, person.id, week.weekStart, week.weekEnd),
+          nightAvailable: !hasVacation(state, person.id, week.weekStart, week.weekEnd) && !hasRequest(state, person.id,'no_call',week.weekStart, week.weekEnd) && !hasRequest(state, person.id,'no_night_call',week.weekStart, week.weekEnd),
           weekendAvailable: !hasVacation(state, person.id, week.weekStart, week.weekendEnd) && !hasRequest(state, person.id,'weekends_off',week.weekendStart, week.weekendEnd),
           respRequested: hasRequest(state, person.id, 'resp_week_request', week.weekStart, week.weekEnd),
           nephroRequested: hasRequest(state, person.id, 'nephro_week_request', week.weekStart, week.weekEnd),
