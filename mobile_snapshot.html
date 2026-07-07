@@ -651,6 +651,10 @@ function loadState(){
       store[targetId].nightCalls += 1;
       store[targetId].weighted.nightCalls = +(store[targetId].nightCalls / fairnessWeight(person,'night')).toFixed(2);
     } else if(kind === 'service'){
+      if(service){
+        store[targetId].serviceCounts = store[targetId].serviceCounts || {};
+        store[targetId].serviceCounts[service] = (store[targetId].serviceCounts[service] || 0) + 1;
+      }
       if(service === 'ICU'){
         store[targetId].icuWeeks += 1;
         store[targetId].weighted.icu = +(store[targetId].icuWeeks / fairnessWeight(person,'icu')).toFixed(2);
@@ -804,6 +808,10 @@ function loadState(){
       store[targetId].nightCalls += 1;
       store[targetId].weighted.nightCalls = +(store[targetId].nightCalls / fairnessWeight(person,'night')).toFixed(2);
     } else if(kind === 'service'){
+      if(service){
+        store[targetId].serviceCounts = store[targetId].serviceCounts || {};
+        store[targetId].serviceCounts[service] = (store[targetId].serviceCounts[service] || 0) + 1;
+      }
       if(service === 'ICU'){
         store[targetId].icuWeeks += 1;
         store[targetId].weighted.icu = +(store[targetId].icuWeeks / fairnessWeight(person,'icu')).toFixed(2);
@@ -871,6 +879,47 @@ function assignMajorServices(state, weeks, availability){
     });
 
     // Phase 2: fill optional OP services in priority order only if feasible.
+
+    // Surgical BB ICU correction:
+    // After Resp and ICU are generated normally, top BB up to his 0.8 ICU target
+    // by swapping ICU onto weeks where BB already has Resp. This does not force Resp.
+    (function ensureBBIcuTargetOnRespWeeks(){
+      const bb = state.physicians.find(p => p.id === 'BB');
+      if(!bb || !canDoService(bb, 'ICU')) return;
+      const target = Math.max(1, Math.round(icuTargets.BB || 0));
+      let current = store.BB?.serviceCounts?.ICU || 0;
+      if(current >= target) return;
+      const candidates = weeks.filter(week => {
+        if(week.locked) return false;
+        if(week.services?.Resp !== 'BB') return false;
+        if(week.services?.ICU === 'BB') return false;
+        if(!availability.BB?.[week.weekStart]?.serviceAvailable) return false;
+        if(availability.BB?.[week.weekStart]?.noIcuWeek) return false;
+        return true;
+      }).sort((a,b) => {
+        const aOwner = a.services?.ICU || '';
+        const bOwner = b.services?.ICU || '';
+        const aCount = aOwner && store[aOwner] ? (store[aOwner].serviceCounts?.ICU || 0) : 0;
+        const bCount = bOwner && store[bOwner] ? (store[bOwner].serviceCounts?.ICU || 0) : 0;
+        return bCount - aCount || a.weekStart.localeCompare(b.weekStart);
+      });
+      for(const week of candidates){
+        if(current >= target) break;
+        const oldOwner = week.services?.ICU || '';
+        if(oldOwner && store[oldOwner]){
+          store[oldOwner].icuWeeks = Math.max(0, (store[oldOwner].icuWeeks || 0) - 1);
+          if(store[oldOwner].serviceCounts){
+            store[oldOwner].serviceCounts.ICU = Math.max(0, (store[oldOwner].serviceCounts.ICU || 0) - 1);
+          }
+          const oldPerson = physicianMap(state)[oldOwner];
+          store[oldOwner].weighted.icu = +(store[oldOwner].icuWeeks / fairnessWeight(oldPerson,'icu')).toFixed(2);
+        }
+        week.services.ICU = 'BB';
+        addAssignmentChargeSimple(store, state, 'BB', 'service', 'ICU');
+        current = store.BB?.serviceCounts?.ICU || 0;
+      }
+    })();
+
     OPTIONAL_OP_SERVICES.forEach(service => {
       weeks.forEach((week, idx) => {
         const assigned = peopleAssignedThisWeek(week);
