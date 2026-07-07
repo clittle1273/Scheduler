@@ -902,10 +902,6 @@ function exportMasterPDF(){
       store[targetId].nightCalls += 1;
       store[targetId].weighted.nightCalls = +(store[targetId].nightCalls / fairnessWeight(person,'night')).toFixed(2);
     } else if(kind === 'service'){
-      if(service){
-        store[targetId].serviceCounts = store[targetId].serviceCounts || {};
-        store[targetId].serviceCounts[service] = (store[targetId].serviceCounts[service] || 0) + 1;
-      }
       if(service === 'ICU'){
         store[targetId].icuWeeks += 1;
         store[targetId].weighted.icu = +(store[targetId].icuWeeks / fairnessWeight(person,'icu')).toFixed(2);
@@ -1071,10 +1067,6 @@ function exportMasterPDF(){
       store[targetId].nightCalls += 1;
       store[targetId].weighted.nightCalls = +(store[targetId].nightCalls / fairnessWeight(person,'night')).toFixed(2);
     } else if(kind === 'service'){
-      if(service){
-        store[targetId].serviceCounts = store[targetId].serviceCounts || {};
-        store[targetId].serviceCounts[service] = (store[targetId].serviceCounts[service] || 0) + 1;
-      }
       if(service === 'ICU'){
         store[targetId].icuWeeks += 1;
         store[targetId].weighted.icu = +(store[targetId].icuWeeks / fairnessWeight(person,'icu')).toFixed(2);
@@ -1156,15 +1148,8 @@ function exportMasterPDF(){
         if(week.services[service]) return;
         const assigned = peopleAssignedThisWeek(week);
         const candidates = state.physicians.filter(p => {
-          const bbIcuOnRespWeek = service === 'ICU' && p.id === 'BB' && week.services?.Resp === 'BB';
           if(!canDoService(p, service)) return false;
-          if(service === 'ICU' && p.id === 'BB' && week.services?.Resp !== 'BB') return false;
-          if(service === 'ICU' && p.id === 'BB'){
-            const bbIcuDone = store.BB?.serviceCounts?.ICU || 0;
-            const bbIcuTarget = Math.max(1, Math.round(icuTargets.BB || 0));
-            if(bbIcuDone >= bbIcuTarget) return false;
-          }
-          if(assigned[p.id] && !bbIcuOnRespWeek) return false;
+          if(assigned[p.id]) return false;
           if(!availability[p.id][week.weekStart].serviceAvailable) return false;
           return true;
         }).sort((a,b) => {
@@ -1173,16 +1158,6 @@ function exportMasterPDF(){
           const bPref = service === 'Resp' ? (availability[b.id][week.weekStart].respRequested ? -1 : 0)
             : service === 'Nephro' ? (availability[b.id][week.weekStart].nephroRequested ? -1 : 0) : 0;
           if(aPref !== bPref) return aPref - bPref;
-
-          if(service === 'ICU'){
-            const targetA = Math.max(0.001, icuTargets[a.id] || 0.001);
-            const targetB = Math.max(0.001, icuTargets[b.id] || 0.001);
-            const doneA = store[a.id]?.serviceCounts?.ICU || 0;
-            const doneB = store[b.id]?.serviceCounts?.ICU || 0;
-            const completionA = doneA / targetA;
-            const completionB = doneB / targetB;
-            if(completionA !== completionB) return completionA - completionB;
-          }
 
           const aDef = serviceDeficitScore(store, a.id, service, requiredTargets) + serviceRecentPenalty(weeks, week.weekStart, a.id, service);
           const bDef = serviceDeficitScore(store, b.id, service, requiredTargets) + serviceRecentPenalty(weeks, week.weekStart, b.id, service);
@@ -1202,43 +1177,73 @@ function exportMasterPDF(){
     });
 
 
-    // Surgical BB ICU correction:
-    // After Resp and ICU are generated normally, top BB up to his 0.8 ICU target
-    // by swapping ICU onto weeks where BB already has Resp. This does not force Resp.
-    (function ensureBBIcuTargetOnRespWeeks(){
+    // BB ICU rescue pass (surgical): after the normal schedule is built, make sure BB
+    // receives about 80% of a normal full-time ICU share. To satisfy the local rule,
+    // any ICU week given to BB is also made a BB Resp week. This is intentionally a
+    // small post-pass and does not change the main fairness engine.
+    (function ensureBBGetsLimitedIcuOnRespWeeks(){
       const bb = state.physicians.find(p => p.id === 'BB');
-      if(!bb || !canDoService(bb, 'ICU')) return;
-      const target = Math.max(1, Math.round(icuTargets.BB || 0));
-      let current = store.BB?.serviceCounts?.ICU || 0;
+      if(!bb || !canDoService(bb, 'ICU') || !canDoService(bb, 'Resp')) return;
+
+      function countService(ownerId, service){
+        return weeks.reduce((sum, week) => sum + ((week.services || {})[service] === ownerId ? 1 : 0), 0);
+      }
+      function decrementService(ownerId, service){
+        if(!ownerId || !store[ownerId]) return;
+        store[ownerId].serviceCounts = store[ownerId].serviceCounts || {};
+        store[ownerId].serviceCounts[service] = Math.max(0, (store[ownerId].serviceCounts[service] || 0) - 1);
+        const person = physicianMap(state)[ownerId];
+        if(service === 'ICU'){
+          store[ownerId].icuWeeks = Math.max(0, (store[ownerId].icuWeeks || 0) - 1);
+          store[ownerId].weighted.icu = +(store[ownerId].icuWeeks / fairnessWeight(person,'icu')).toFixed(2);
+        } else {
+          store[ownerId].weeklyServices = Math.max(0, (store[ownerId].weeklyServices || 0) - 1);
+          store[ownerId].weighted.services = +(store[ownerId].weeklyServices / fairnessWeight(person,'service')).toFixed(2);
+        }
+      }
+
+      const fullTimeIcuIds = state.physicians
+        .filter(p => p.id !== 'BB' && p.id !== 'DC' && canDoService(p, 'ICU'))
+        .map(p => p.id);
+      const avgFullTimeIcu = fullTimeIcuIds.length
+        ? fullTimeIcuIds.reduce((sum, id) => sum + countService(id, 'ICU'), 0) / fullTimeIcuIds.length
+        : 0;
+      const target = Math.max(1, Math.round(avgFullTimeIcu * 0.8));
+      let current = countService('BB', 'ICU');
       if(current >= target) return;
+
       const candidates = weeks.filter(week => {
         if(week.locked) return false;
-        if(week.services?.Resp !== 'BB') return false;
-        if(week.services?.ICU === 'BB') return false;
+        if((week.pinnedServices || {}).ICU || (week.pinnedServices || {}).Resp) return false;
+        if((week.services || {}).ICU === 'BB') return false;
         if(!availability.BB?.[week.weekStart]?.serviceAvailable) return false;
         if(availability.BB?.[week.weekStart]?.noIcuWeek) return false;
+        const assigned = peopleAssignedThisWeek(week);
+        const bbOtherService = assigned.BB;
+        if(bbOtherService && !['Resp','ICU'].includes(bbOtherService)) return false;
         return true;
       }).sort((a,b) => {
-        const aOwner = a.services?.ICU || '';
-        const bOwner = b.services?.ICU || '';
-        const aCount = aOwner && store[aOwner] ? (store[aOwner].serviceCounts?.ICU || 0) : 0;
-        const bCount = bOwner && store[bOwner] ? (store[bOwner].serviceCounts?.ICU || 0) : 0;
-        return bCount - aCount || a.weekStart.localeCompare(b.weekStart);
+        const aAlreadyResp = (a.services || {}).Resp === 'BB' ? 0 : 1;
+        const bAlreadyResp = (b.services || {}).Resp === 'BB' ? 0 : 1;
+        if(aAlreadyResp !== bAlreadyResp) return aAlreadyResp - bAlreadyResp;
+        const aOldIcu = (a.services || {}).ICU || '';
+        const bOldIcu = (b.services || {}).ICU || '';
+        const aOldCount = aOldIcu && store[aOldIcu] ? (store[aOldIcu].serviceCounts?.ICU || 0) : 0;
+        const bOldCount = bOldIcu && store[bOldIcu] ? (store[bOldIcu].serviceCounts?.ICU || 0) : 0;
+        return bOldCount - aOldCount || a.weekStart.localeCompare(b.weekStart);
       });
+
       for(const week of candidates){
         if(current >= target) break;
-        const oldOwner = week.services?.ICU || '';
-        if(oldOwner && store[oldOwner]){
-          store[oldOwner].icuWeeks = Math.max(0, (store[oldOwner].icuWeeks || 0) - 1);
-          if(store[oldOwner].serviceCounts){
-            store[oldOwner].serviceCounts.ICU = Math.max(0, (store[oldOwner].serviceCounts.ICU || 0) - 1);
-          }
-          const oldPerson = physicianMap(state)[oldOwner];
-          store[oldOwner].weighted.icu = +(store[oldOwner].icuWeeks / fairnessWeight(oldPerson,'icu')).toFixed(2);
-        }
+        const oldResp = (week.services || {}).Resp || '';
+        const oldIcu = (week.services || {}).ICU || '';
+        if(oldResp && oldResp !== 'BB') decrementService(oldResp, 'Resp');
+        if(oldIcu && oldIcu !== 'BB') decrementService(oldIcu, 'ICU');
+        week.services.Resp = 'BB';
         week.services.ICU = 'BB';
+        if(oldResp !== 'BB') addAssignmentChargeSimple(store, state, 'BB', 'service', 'Resp');
         addAssignmentChargeSimple(store, state, 'BB', 'service', 'ICU');
-        current = store.BB?.serviceCounts?.ICU || 0;
+        current = countService('BB', 'ICU');
       }
     })();
 
