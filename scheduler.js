@@ -1,42 +1,3 @@
-
-// --- Deterministic CAR rotation (nuclear fix) ---
-function eligibleCAR(state, service){
-  return state.physicians
-    .filter(p => canDoService(p, service))
-    .sort((a,b)=> (a.name||a.id).localeCompare(b.name||b.id));
-}
-
-function applyCarRotation(state, weeks, availability){
-  if(!state.metadata) state.metadata = {};
-  if(!state.metadata.carRotation) state.metadata.carRotation = {CAR1:0, CAR2:0};
-
-  ['CAR1','CAR2'].forEach(service=>{
-    const eligible = eligibleCAR(state, service);
-    if(!eligible.length) return;
-
-    let idx = state.metadata.carRotation[service] || 0;
-
-    weeks.forEach(week=>{
-      if(week.services && week.services[service]) return; // already locked
-      let tries=0;
-      while(tries < eligible.length){
-        const p = eligible[idx % eligible.length];
-        idx++;
-        tries++;
-
-        const available = !availability || !availability[p.id] || availability[p.id][week.weekStart]?.serviceAvailable !== false;
-        if(available){
-          if(!week.services) week.services={};
-          week.services[service] = p.id;
-          break;
-        }
-      }
-    });
-
-    state.metadata.carRotation[service] = idx % eligible.length;
-  });
-}
-
 (function(){
   const MAJOR_SERVICES = ['ICU','GIM','CAR1','CAR2','Resp','Nephro','OP1','OP2','OP3'];
   const REQUIRED_SERVICES = ['ICU','Resp','Nephro','GIM','CAR1','CAR2'];
@@ -102,6 +63,7 @@ function applyCarRotation(state, weeks, availability){
     if(bucket === 'icu') return w.icu || 1;
     if(bucket === 'weekend') return w.weekends || 1;
     if(bucket === 'night') return w.weekdayCall || 1;
+    if(bucket === 'echo') return w.echo || 1;
     return 1;
   }
 
@@ -113,82 +75,18 @@ function applyCarRotation(state, weeks, availability){
     return person.coveringPhysician || null;
   }
 
-  
-  function emptyCarryForwardRowScheduler(id, name){
-    return {
-      id:id,
-      name:name || id,
-      serviceCounts:{ ICU:0, GIM:0, CAR1:0, CAR2:0, OP1:0, OP2:0, OP3:0, Resp:0, Nephro:0, Echo:0 },
-      nightCalls:0,
-      weekends:0
-    };
-  }
-
-  function currentScheduleYear(state){
-    const start = state?.settings?.scheduleStart || '';
-    return /^\d{4}/.test(start) ? start.slice(0,4) : '';
-  }
-
-  function buildYearlyCarryForward(state){
-    const year = currentScheduleYear(state);
-    const out = {};
-    (state.publishHistory || []).forEach(entry => {
-      const entryYear = (entry?.start || '').slice(0,4);
-      if(year && entryYear !== year) return;
-      (entry.fairnessSummary || []).forEach(row => {
-        const cur = out[row.id] || emptyCarryForwardRowScheduler(row.id, row.name);
-        cur.name = row.name || cur.name || row.id;
-        Object.keys(cur.serviceCounts).forEach(service => {
-          cur.serviceCounts[service] = (cur.serviceCounts[service] || 0) + (row.serviceCounts?.[service] || 0);
-        });
-        cur.nightCalls = (cur.nightCalls || 0) + (row.nightCalls || 0);
-        cur.weekends = (cur.weekends || 0) + (row.weekends || 0);
-        out[row.id] = cur;
-      });
-    });
-    return out;
-  }
-
   function initFairnessStore(state){
     const store = {};
-    const carry = buildYearlyCarryForward(state);
     state.physicians.forEach(p => {
-      const fte = (p.fte || 1.0);
-      const hist = carry[p.id] || emptyCarryForwardRowScheduler(p.id, p.name);
-      const fte = (p.fte || 1.0);
-      const serviceCounts = {
-        ICU: hist.serviceCounts?.ICU || 0,
-        GIM: hist.serviceCounts?.GIM || 0,
-        CAR1: hist.serviceCounts?.CAR1 || 0,
-        CAR2: hist.serviceCounts?.CAR2 || 0,
-        OP1: hist.serviceCounts?.OP1 || 0,
-        OP2: hist.serviceCounts?.OP2 || 0,
-        OP3: hist.serviceCounts?.OP3 || 0,
-        Resp: hist.serviceCounts?.Resp || 0,
-        Nephro: hist.serviceCounts?.Nephro || 0,
-        Echo: hist.serviceCounts?.Echo || 0
-      };
-      const icuWeeks = serviceCounts.ICU || 0;
-      const weeklyServices = Object.entries(serviceCounts).reduce((sum, entry) => {
-        const [service, count] = entry;
-        return sum + (service === 'ICU' ? 0 : (count || 0));
-      }, 0);
-      const weekends = hist.weekends || 0;
-      const nightCalls = hist.nightCalls || 0;
       store[p.id] = {
         id:p.id,
         name:p.name,
-        weekends:weekends,
-        nightCalls:nightCalls,
-        icuWeeks:icuWeeks,
-        weeklyServices:weeklyServices,
-        serviceCounts:serviceCounts,
-        weighted:{
-          weekends: +(weekends / fairnessWeight(p,'weekend')).toFixed(2),
-          nightCalls: +(nightCalls / fairnessWeight(p,'night')).toFixed(2),
-          icu: +(icuWeeks / fairnessWeight(p,'icu')).toFixed(2),
-          services: +(weeklyServices / fairnessWeight(p,'service')).toFixed(2)
-        }
+        weekends:0,
+        nightCalls:0,
+        icuWeeks:0,
+        weeklyServices:0,
+        serviceCounts:{},
+        weighted:{ weekends:0, nightCalls:0, icu:0, services:0 }
       };
     });
     return store;
@@ -200,8 +98,7 @@ function applyCarRotation(state, weeks, availability){
     const person = physicianMap(state)[targetId];
     if(kind === 'weekend'){
       store[targetId].weekends += 1;
-      const fte = (person?.fte || 1.0);
-      store[targetId].weighted.weekends = +((store[targetId].weighted.weekends || 0) + (1 / fte)).toFixed(2);
+      store[targetId].weighted.weekends = +(store[targetId].weekends / fairnessWeight(person,'weekend')).toFixed(2);
     } else if(kind === 'night'){
       store[targetId].nightCalls += 1;
       store[targetId].weighted.nightCalls = +(store[targetId].nightCalls / fairnessWeight(person,'night')).toFixed(2);
@@ -233,108 +130,12 @@ function applyCarRotation(state, weeks, availability){
   }
 
   
-  
-  function getPriorWeekMap(state){
-    return Object.fromEntries((state.draftWeeks || []).map(w => [w.weekStart, w]));
-  }
-
-  function getPriorNightMap(state){
-    return Object.fromEntries((state.draftNightManual || []).map(n => [n.date, n]));
-  }
-
-  function copyLockedWeekToNewWeek(prior, week){
-    week.locked = true;
-    week.services = Object.assign({}, prior.services || {});
-    week.weekendOwner = prior.weekendOwner || '';
-    week.pinnedServices = Object.assign({}, prior.pinnedServices || {});
-  }
-
-  function applyLockedWeeks(state, weeks){
-    const priorMap = getPriorWeekMap(state);
-    weeks.forEach(week => {
-      const prior = priorMap[week.weekStart];
-      if(prior && prior.locked){
-        copyLockedWeekToNewWeek(prior, week);
-      } else if(prior && prior.pinnedServices){
-        week.pinnedServices = Object.assign({}, prior.pinnedServices || {});
-      }
-    });
-  }
-
-  function stableBonusWeek(state, weekStart, service, personId){
-    const prior = getPriorWeekMap(state)[weekStart];
-    if(!prior) return 0;
-    const priorOwner = service === 'Weekend' ? prior.weekendOwner : (prior.services || {})[service];
-    return priorOwner === personId ? -0.35 : 0;
-  }
-
-  function stableBonusNight(state, date, personId){
-    const prior = getPriorNightMap(state)[date];
-    return prior && prior.owner === personId ? -0.35 : 0;
-  }
-
-  function seedLockedMajorAssignments(state, weeks, store){
-    const priorMap = getPriorWeekMap(state);
-    weeks.forEach(week => {
-      const prior = priorMap[week.weekStart];
-      if(prior && prior.locked){
-        copyLockedWeekToNewWeek(prior, week);
-        MAJOR_SERVICES.forEach(service => {
-          const owner = week.services[service];
-          if(owner) addAssignmentChargeSimple(store, state, owner, 'service', service);
-        });
-      }
-    });
-  }
-
-  function seedLockedWeekendAssignments(state, weeks, store){
-    const priorMap = getPriorWeekMap(state);
-    weeks.forEach(week => {
-      const prior = priorMap[week.weekStart];
-      if(prior && prior.locked){
-        copyLockedWeekToNewWeek(prior, week);
-        if(week.weekendOwner) addAssignmentChargeSimple(store, state, week.weekendOwner, 'weekend');
-      }
-    });
-  }
-
-  function seedLockedNightAssignments(state, weeks, store, out, map, perMonth, perWeek){
-    const priorWeekMap = getPriorWeekMap(state);
-    const priorNightMap = getPriorNightMap(state);
-    weeks.forEach((week, idx) => {
-      const prior = priorWeekMap[week.weekStart];
-      if(!(prior && prior.locked)) return;
-      copyLockedWeekToNewWeek(prior, week);
-      const mon = parseDate(week.weekStart);
-      for(let i=0;i<5;i++){
-        const date = iso(addDays(mon,i));
-        const prev = priorNightMap[date];
-        const owner = prev ? (prev.owner || '') : '';
-        out.push({ date, owner, weekend:false, weekStart:week.weekStart });
-        if(owner){
-          const month = monthKey(date);
-          map[date] = owner;
-          perMonth[`${owner}:${month}`] = (perMonth[`${owner}:${month}`]||0)+1;
-          perWeek[`${owner}:${week.weekStart}`] = (perWeek[`${owner}:${week.weekStart}`]||0)+1;
-          addAssignmentChargeSimple(store, state, owner, 'night');
-        }
-      }
-      out.push({ date: week.weekendStart, owner: week.weekendOwner || '', weekend:true, weekStart:week.weekStart });
-      out.push({ date: week.weekendEnd, owner: week.weekendOwner || '', weekend:true, weekStart:week.weekStart });
-      if(week.weekendOwner){
-        map[week.weekendStart] = week.weekendOwner;
-        map[week.weekendEnd] = week.weekendOwner;
-      }
-    });
-  }
-
   function applyPinnedAssignments(state, weeks){
     const priorWeeks = state.draftWeeks || [];
     const priorMap = Object.fromEntries(priorWeeks.map(w => [w.weekStart, w]));
     weeks.forEach(week => {
       const prior = priorMap[week.weekStart];
       if(!prior) return;
-      if(prior.locked) return;
       week.pinnedServices = Object.assign({}, prior.pinnedServices || {});
       Object.keys(week.pinnedServices).forEach(service => {
         if(!week.pinnedServices[service]) return;
@@ -343,10 +144,6 @@ function applyCarRotation(state, weeks, availability){
       });
     });
   }
-
-    const priorWeeks = state.draftWeeks || [];
-    const priorMap = Object.fromEntries(priorWeeks.map(w => [w.weekStart, w]));
-    
 
   function currentScore(store, id, bucket){
     if(!store[id]) return 999;
@@ -361,8 +158,6 @@ function applyCarRotation(state, weeks, availability){
     getAllPeople(state).forEach(person => {
       avail[person.id] = {};
       weeks.forEach(week => {
-        if(week.locked) return;
-        if(week.locked) return;
         avail[person.id][week.weekStart] = {
           serviceAvailable: !hasVacation(state, person.id, week.weekStart, week.weekendEnd),
           nightAvailable: !hasVacation(state, person.id, week.weekStart, week.weekendEnd) && !hasRequest(state, person.id,'no_call',week.weekStart, week.weekEnd) && !hasRequest(state, person.id,'no_night_call',week.weekStart, week.weekEnd),
@@ -404,14 +199,10 @@ function applyCarRotation(state, weeks, availability){
     const targets = {};
     (services || MAJOR_SERVICES).forEach(service => {
       const eligible = state.physicians.filter(p => canDoService(p, service));
-      const totalWeight = eligible.reduce((sum, p) => {
-        const fte = p?.fte || 1.0;
-        return sum + (fte * serviceBucketWeight(p, service));
-      }, 0) || 1;
+      const totalWeight = eligible.reduce((sum, p) => sum + serviceBucketWeight(p, service), 0) || 1;
       targets[service] = {};
       eligible.forEach(p => {
-        const fte = p?.fte || 1.0;
-        targets[service][p.id] = +(weeks.length * ((fte * serviceBucketWeight(p, service)) / totalWeight)).toFixed(4);
+        targets[service][p.id] = +(weeks.length * serviceBucketWeight(p, service) / totalWeight).toFixed(4);
       });
     });
     return targets;
@@ -424,18 +215,12 @@ function applyCarRotation(state, weeks, availability){
     return +((current) / target).toFixed(4);
   }
 
-  function serviceRecentPenalty(weeks, weekStart, personId, service) {
+  function serviceRecentPenalty(weeks, weekStart, personId, service){
     const idx = weeks.findIndex(w => w.weekStart === weekStart);
-    if (idx <= 0) return 0;
+    if(idx <= 0) return 0;
     let penalty = 0;
-    // stronger CAR1/CAR2 deterrent
-    if (['CAR1','CAR2'].includes(service)) {
-      if (idx-1 >= 0 && weeks[idx-1].services?.[service] === personId) penalty += 2.0;
-      if (idx-2 >= 0 && weeks[idx-2].services?.[service] === personId) penalty += 1.0;
-    } else {
-      if (idx-1 >= 0 && weeks[idx-1].services?.[service] === personId) penalty += 0.25;
-      if (idx-2 >= 0 && weeks[idx-2].services?.[service] === personId) penalty += 0.15;
-    }
+    if(idx-1 >= 0 && weeks[idx-1].services?.[service] === personId) penalty += 0.25;
+    if(idx-2 >= 0 && weeks[idx-2].services?.[service] === personId) penalty += 0.15;
     return penalty;
   }
 
@@ -476,8 +261,7 @@ function applyCarRotation(state, weeks, availability){
     const person = physicianMap(state)[targetId];
     if(kind === 'weekend'){
       store[targetId].weekends += 1;
-      const fte = (person?.fte || 1.0);
-      store[targetId].weighted.weekends = +((store[targetId].weighted.weekends || 0) + (1 / fte)).toFixed(2);
+      store[targetId].weighted.weekends = +(store[targetId].weekends / fairnessWeight(person,'weekend')).toFixed(2);
     } else if(kind === 'night'){
       store[targetId].nightCalls += 1;
       store[targetId].weighted.nightCalls = +(store[targetId].nightCalls / fairnessWeight(person,'night')).toFixed(2);
@@ -494,53 +278,66 @@ function applyCarRotation(state, weeks, availability){
 
   
 
+
   function seedLocumWeeklyCoverage(state, weeks, availability, store){
-    const locums = (state.locums || []).slice().sort((a,b) => a.id.localeCompare(b.id));
     const weekMap = Object.fromEntries(weeks.map(w => [w.weekStart, w]));
-    locums.forEach(locum => {
+    (state.locums || []).forEach(locum => {
       (locum.weeklyCoverage || []).forEach(entry => {
         const week = weekMap[entry.weekStart];
         if(!week || week.locked) return;
+        if(!availability[locum.id]?.[week.weekStart]?.serviceAvailable) return;
         (entry.services || []).forEach(service => {
           if(!MAJOR_SERVICES.includes(service)) return;
-          if(week.services[service]) return;
-          if(!availability[locum.id]?.[week.weekStart]?.serviceAvailable) return;
-          week.services[service] = locum.id;
-          addAssignmentChargeSimple(store, state, locum.id, 'service', service);
+          if(!week.services[service]){
+            week.services[service] = locum.id;
+            addAssignmentChargeSimple(store, state, locum.id, 'service', service);
+          }
         });
       });
     });
   }
 
-  function seedLocumWeekendCoverage(state, weeks, availability, store){
-    const locums = (state.locums || []).slice().sort((a,b) => a.id.localeCompare(b.id));
-    const weekByWeekend = Object.fromEntries(weeks.map(w => [w.weekendStart, w]));
-    locums.forEach(locum => {
+  function seedLocumWeekends(state, weeks, availability, store){
+    const weekMap = Object.fromEntries(weeks.map(w => [w.weekendStart, w]));
+    (state.locums || []).forEach(locum => {
       (locum.weekendDates || []).forEach(date => {
-        const week = weekByWeekend[date];
+        const week = weekMap[date];
         if(!week || week.locked) return;
-        if(week.weekendOwner) return;
         if(!availability[locum.id]?.[week.weekStart]?.weekendAvailable) return;
-        week.weekendOwner = locum.id;
-        addAssignmentChargeSimple(store, state, locum.id, 'weekend');
+        if(!week.weekendOwner){
+          week.weekendOwner = locum.id;
+          addAssignmentChargeSimple(store, state, locum.id, 'weekend');
+        }
       });
     });
   }
 
-  function getLocumForNightDate(state, weekStart, date, weekend){
-    const locums = (state.locums || []).slice().sort((a,b) => a.id.localeCompare(b.id));
-    if(weekend){
-      return locums.find(locum => (locum.weekendDates || []).includes(date)) || null;
-    }
-    return locums.find(locum => (locum.callDates || []).includes(date)) || null;
+  function seedLocumNightCalls(state, weeks, availability, store, out, map, perMonth, perWeek){
+    const validDates = new Set();
+    weeks.forEach(week => {
+      const mon = parseDate(week.weekStart);
+      for(let i=0;i<5;i++) validDates.add(iso(addDays(mon,i)));
+    });
+    (state.locums || []).forEach(locum => {
+      (locum.callDates || []).forEach(date => {
+        if(!validDates.has(date)) return;
+        const week = weeks.find(w => date >= w.weekStart && date <= w.weekEnd);
+        if(!week || week.locked) return;
+        if(!availability[locum.id]?.[week.weekStart]?.nightAvailable) return;
+        const month = monthKey(date);
+        if(map[date]) return;
+        out.push({ date, owner: locum.id, weekend:false, weekStart:week.weekStart });
+        map[date] = locum.id;
+        perMonth[`${locum.id}:${month}`] = (perMonth[`${locum.id}:${month}`]||0)+1;
+        perWeek[`${locum.id}:${week.weekStart}`] = (perWeek[`${locum.id}:${week.weekStart}`]||0)+1;
+        addAssignmentChargeSimple(store, state, locum.id, 'night');
+      });
+    });
   }
 
 
-  function assignMajorServices(state, weeks, availability, options={
-  // deterministic CAR rotation first
-  applyCarRotation(state, weeks, availability);}){
+  function assignMajorServices(state, weeks, availability){
     const store = initFairnessStore(state);
-    seedLockedMajorAssignments(state, weeks, store);
     seedLocumWeeklyCoverage(state, weeks, availability, store);
     const requiredTargets = computeServiceTargets(state, weeks, REQUIRED_SERVICES);
     const icuTargets = computeIcuTargetsForRange(state, weeks, store);
@@ -549,54 +346,24 @@ function applyCarRotation(state, weeks, availability){
       weeks.forEach(week => {
         if(week.services[service]) return;
         const assigned = peopleAssignedThisWeek(week);
-        const prevOwner = idx > 0 ? weeks[idx-1].services?.[service] : '';
-        const prev2Owner = idx > 1 ? weeks[idx-2].services?.[service] : '';
-
-        let candidates = state.physicians.filter(p => {
+        const candidates = state.physicians.filter(p => {
           if(!canDoService(p, service)) return false;
-          if(assigned[p.id]) return false;
+          // BB ICU rule: BB may only be assigned ICU on weeks where BB is also assigned Resp.
+          // This is the only allowed same-week double assignment for BB.
+          const bbRespIcuWeek = service === 'ICU' && p.id === 'BB' && week.services.Resp === 'BB';
+          if(service === 'ICU' && p.id === 'BB' && !bbRespIcuWeek) return false;
+          if(assigned[p.id] && !bbRespIcuWeek) return false;
           if(!availability[p.id][week.weekStart].serviceAvailable) return false;
-          if(service === 'Resp' && p.id === 'BB'){
-            const bbTarget = Math.max(0.001, icuTargets['BB'] || 0.001);
-            const bbDone = store['BB']?.serviceCounts?.ICU || 0;
-            const bbCompletion = bbDone / bbTarget;
-            if(bbCompletion < 0.999) return false;
-          }
-          if((service === 'CAR1' || service === 'CAR2') && (p.id === prevOwner || p.id === prev2Owner)) return false;
           return true;
-        });
-
-        if(!candidates.length && (service === 'CAR1' || service === 'CAR2')){
-          candidates = state.physicians.filter(p => {
-            if(!canDoService(p, service)) return false;
-            if(assigned[p.id]) return false;
-            if(!availability[p.id][week.weekStart].serviceAvailable) return false;
-            return true;
-          });
-        }
-
-        candidates = candidates.sort((a,b) => {
+        }).sort((a,b) => {
           const aPref = service === 'Resp' ? (availability[a.id][week.weekStart].respRequested ? -1 : 0)
             : service === 'Nephro' ? (availability[a.id][week.weekStart].nephroRequested ? -1 : 0) : 0;
           const bPref = service === 'Resp' ? (availability[b.id][week.weekStart].respRequested ? -1 : 0)
             : service === 'Nephro' ? (availability[b.id][week.weekStart].nephroRequested ? -1 : 0) : 0;
           if(aPref !== bPref) return aPref - bPref;
 
-          if(service === 'ICU'){
-            const targetA = Math.max(0.001, icuTargets[a.id] || 0.001);
-            const targetB = Math.max(0.001, icuTargets[b.id] || 0.001);
-            const doneA = store[a.id]?.serviceCounts?.ICU || 0;
-            const doneB = store[b.id]?.serviceCounts?.ICU || 0;
-            const completionA = doneA / targetA;
-            const completionB = doneB / targetB;
-            if(completionA !== completionB) return completionA - completionB;
-            const prefA = a.id === 'BB' ? -0.05 : 0;
-            const prefB = b.id === 'BB' ? -0.05 : 0;
-            if(prefA !== prefB) return prefA - prefB;
-          }
-
-          const aDef = serviceDeficitScore(store, a.id, service, requiredTargets) + serviceRecentPenalty(weeks, week.weekStart, a.id, service) + (options.stable ? stableBonusWeek(state, week.weekStart, service, a.id) : 0);
-          const bDef = serviceDeficitScore(store, b.id, service, requiredTargets) + serviceRecentPenalty(weeks, week.weekStart, b.id, service) + (options.stable ? stableBonusWeek(state, week.weekStart, service, b.id) : 0);
+          const aDef = serviceDeficitScore(store, a.id, service, requiredTargets) + serviceRecentPenalty(weeks, week.weekStart, a.id, service);
+          const bDef = serviceDeficitScore(store, b.id, service, requiredTargets) + serviceRecentPenalty(weeks, week.weekStart, b.id, service);
           if(aDef !== bDef) return aDef - bDef;
 
           const aOverall = overallWeeklyBurden(store, a.id);
@@ -616,29 +383,14 @@ function applyCarRotation(state, weeks, availability){
       weeks.forEach(week => {
         if(week.services[service]) return;
         const assigned = peopleAssignedThisWeek(week);
-        const prevOwner = idx > 0 ? weeks[idx-1].services?.[service] : '';
-        const prev2Owner = idx > 1 ? weeks[idx-2].services?.[service] : '';
-
-        let candidates = state.physicians.filter(p => {
+        const candidates = state.physicians.filter(p => {
           if(!canDoService(p, service)) return false;
           if(assigned[p.id]) return false;
           if(!availability[p.id][week.weekStart].serviceAvailable) return false;
-          if((service === 'CAR1' || service === 'CAR2') && (p.id === prevOwner || p.id === prev2Owner)) return false;
           return true;
-        });
-
-        if(!candidates.length && (service === 'CAR1' || service === 'CAR2')){
-          candidates = state.physicians.filter(p => {
-            if(!canDoService(p, service)) return false;
-            if(assigned[p.id]) return false;
-            if(!availability[p.id][week.weekStart].serviceAvailable) return false;
-            return true;
-          });
-        }
-
-        candidates = candidates.sort((a,b) => {
-          const aOverall = overallWeeklyBurden(store, a.id) + serviceRecentPenalty(weeks, week.weekStart, a.id, service) + opPriorityPenalty(service) + (options.stable ? stableBonusWeek(state, week.weekStart, service, a.id) : 0);
-          const bOverall = overallWeeklyBurden(store, b.id) + serviceRecentPenalty(weeks, week.weekStart, b.id, service) + opPriorityPenalty(service) + (options.stable ? stableBonusWeek(state, week.weekStart, service, b.id) : 0);
+        }).sort((a,b) => {
+          const aOverall = overallWeeklyBurden(store, a.id) + serviceRecentPenalty(weeks, week.weekStart, a.id, service) + opPriorityPenalty(service);
+          const bOverall = overallWeeklyBurden(store, b.id) + serviceRecentPenalty(weeks, week.weekStart, b.id, service) + opPriorityPenalty(service);
           if(aOverall !== bOverall) return aOverall - bOverall;
           return a.id.localeCompare(b.id);
         });
@@ -651,19 +403,49 @@ function applyCarRotation(state, weeks, availability){
       });
     });
 
+    const echoOrder = ['CL','DK','DC'];
+    const echoCounts = Object.fromEntries(echoOrder.map(id => [id, 0]));
+    function echoLoadScore(personId){
+      const p = physicianMap(state)[personId];
+      return (echoCounts[personId] || 0) / fairnessWeight(p, 'echo');
+    }
+    function tryMakeEchoEligible(week, person){
+      if(!person || !person.echoEligible) return false;
+      if(!availability[person.id]?.[week.weekStart]?.serviceAvailable) return false;
+      if(getPrimaryServiceForPerson(week, person.id)) return ECHO_ALLOWED.includes(getPrimaryServiceForPerson(week, person.id));
+      const assigned = peopleAssignedThisWeek(week);
+      if(assigned[person.id]) return false;
+      const openOp = ['OP3','OP2','OP1'].find(s => !week.services[s] && canDoService(person, s));
+      if(openOp){
+        week.services[openOp] = person.id;
+        addAssignmentChargeSimple(store, state, person.id, 'service', openOp);
+        return true;
+      }
+      return false;
+    }
+
     weeks.forEach((week, idx) => {
+      const preferred = echoOrder[idx % echoOrder.length];
+      const lowestEchoId = echoOrder.slice().sort((a,b) => {
+        const diff = echoLoadScore(a) - echoLoadScore(b);
+        if(diff !== 0) return diff;
+        return echoOrder.indexOf(a) - echoOrder.indexOf(b);
+      })[0];
+      const preferredPerson = physicianMap(state)[lowestEchoId || preferred];
+      tryMakeEchoEligible(week, preferredPerson);
+
       const echoCandidates = state.physicians.filter(p => p.echoEligible && availability[p.id][week.weekStart].serviceAvailable && ECHO_ALLOWED.includes(getPrimaryServiceForPerson(week,p.id)))
         .sort((a,b) => {
-          const as = currentScore(store, a.id, 'service');
-          const bs = currentScore(store, b.id, 'service');
+          const as = echoLoadScore(a.id);
+          const bs = echoLoadScore(b.id);
           if(as !== bs) return as - bs;
+          const ap = echoOrder.indexOf(a.id); const bp = echoOrder.indexOf(b.id);
+          if(ap !== bp) return (ap === -1 ? 99 : ap) - (bp === -1 ? 99 : bp);
           return a.id.localeCompare(b.id);
         });
       if(echoCandidates.length){
-        const order = ['CL','DK','DC'];
-        const preferred = order[idx % order.length];
-        const match = echoCandidates.find(p => p.id === preferred);
-        week.services.Echo = (match || echoCandidates[0]).id;
+        week.services.Echo = echoCandidates[0].id;
+        if(echoCounts[week.services.Echo] != null) echoCounts[week.services.Echo] += 1;
       } else {
         week.services.Echo = '';
       }
@@ -676,70 +458,38 @@ function applyCarRotation(state, weeks, availability){
 
   function weekendPreferenceScore(weeks, idx, personId){
     let score = 0;
-    const prev = weeks[idx-1];
+    const current = weeks[idx];
     const next = weeks[idx+1];
-    const prevSvc = prev ? getPrimaryServiceForPerson(prev, personId) : '';
+
+    // Strong preference: the GIM or ICU physician for the current service week
+    // should take the weekend immediately following that week if available.
+    const currentSvc = current ? getPrimaryServiceForPerson(current, personId) : '';
+    if(['ICU','GIM'].includes(currentSvc)) score -= 1000;
+
+    // Fallback preference: if the following-week service person cannot take their own
+    // following weekend, prefer assigning them the weekend before that service week.
     const nextSvc = next ? getPrimaryServiceForPerson(next, personId) : '';
-    if(['ICU','GIM'].includes(prevSvc)) score -= 1.1;
-    if(['ICU','GIM'].includes(nextSvc)) score -= 1.0;
+    if(['ICU','GIM'].includes(nextSvc)) score -= 250;
+
     return score;
   }
 
-  function assignWeekendOwners(state, weeks, availability, options={}){
+  function assignWeekendOwners(state, weeks, availability){
     const store = initFairnessStore(state);
-    seedLockedWeekendAssignments(state, weeks, store);
     seedLocumWeekends(state, weeks, availability, store);
-
-    const eligible = state.physicians.filter(p => p.weekendEligible);
-    const fullWeekendPool = eligible.filter(p => Math.abs((p.fte || 1.0) - 1.0) < 0.01);
-    const baseline = fullWeekendPool.length ? (weeks.length / fullWeekendPool.length) : weeks.length;
-
-    const weekendCaps = {
-      BB: Math.round(baseline * 0.8),
-      DC: Math.round(baseline * 0.5)
-    };
-
     weeks.forEach((week, idx) => {
       if(week.locked) return;
       if(week.weekendOwner) return;
-
       const month = monthKey(week.weekendStart);
       const monthCounts = Object.fromEntries(state.physicians.map(p => [p.id, 0]));
-      weeks.slice(0, idx).forEach(prev => {
-        if(prev.weekendOwner && state.physicians.some(p => p.id===prev.weekendOwner) && monthKey(prev.weekendStart)===month){
-          monthCounts[prev.weekendOwner] = (monthCounts[prev.weekendOwner] || 0) + 1;
-        }
-      });
-
-      let candidates = eligible.filter(p => {
-        if(!availability[p.id][week.weekStart].weekendAvailable) return false;
-        const done = store[p.id]?.weekends || 0;
-        const cap = weekendCaps[p.id];
-        if(cap !== undefined && done >= cap) return false;
-        return true;
-      });
-
-      if(!candidates.length){
-        candidates = eligible.filter(p => availability[p.id][week.weekStart].weekendAvailable);
-      }
-
-      candidates = candidates.sort((a, b) => {
-        const aCap = weekendCaps[a.id] ?? baseline;
-        const bCap = weekendCaps[b.id] ?? baseline;
-        const doneA = store[a.id]?.weekends || 0;
-        const doneB = store[b.id]?.weekends || 0;
-
-        const aRatio = doneA / Math.max(1, aCap);
-        const bRatio = doneB / Math.max(1, bCap);
-        if(aRatio !== bRatio) return aRatio - bRatio;
-
-        const aMonth = monthCounts[a.id] || 0;
-        const bMonth = monthCounts[b.id] || 0;
-        if(aMonth !== bMonth) return aMonth - bMonth;
-
-        return a.id.localeCompare(b.id);
-      });
-
+      weeks.slice(0,idx).forEach(prev => { if(prev.weekendOwner && state.physicians.some(p => p.id===prev.weekendOwner)) monthCounts[prev.weekendOwner] = (monthCounts[prev.weekendOwner]||0)+ (monthKey(prev.weekendStart)===month?1:0); });
+      const candidates = state.physicians.filter(p => p.weekendEligible && availability[p.id][week.weekStart].weekendAvailable && (monthCounts[p.id]||0) < 1)
+        .sort((a,b) => {
+          const aScore = currentScore(store, a.id, 'weekend') + weekendPreferenceScore(weeks, idx, a.id);
+          const bScore = currentScore(store, b.id, 'weekend') + weekendPreferenceScore(weeks, idx, b.id);
+          if(aScore !== bScore) return aScore - bScore;
+          return a.id.localeCompare(b.id);
+        });
       if(candidates[0]){
         week.weekendOwner = candidates[0].id;
         addAssignmentChargeSimple(store, state, candidates[0].id, 'weekend');
@@ -748,19 +498,56 @@ function applyCarRotation(state, weeks, availability){
   }
 
   function nightAssignmentsMap(nights){ return Object.fromEntries((nights||[]).map(n => [n.date, n.owner])); }
-  function hasConsecutiveNight(map, personId, dateStr){
-    const prev = iso(addDays(parseDate(dateStr), -1));
-    const next = iso(addDays(parseDate(dateStr), 1));
-    return map[prev] === personId || map[next] === personId;
+  function isLocumId(state, personId){ return (state.locums || []).some(l => l.id === personId); }
+  function isPhysicianId(state, personId){ return (state.physicians || []).some(p => p.id === personId); }
+  function isBFAllowedWeekdayNight(week, personId){
+    // BF weekday night call only on weeks where BF is assigned to Nephro. Weekend/locum rules are separate.
+    return personId !== 'BF' || ((week && week.services && week.services.Nephro) === 'BF');
+  }
+  function daysBetween(dateA, dateB){
+    return Math.round((parseDate(dateA) - parseDate(dateB)) / 86400000);
+  }
+  function callSpacingPenalty(state, map, personId, dateStr, week, dayIndex, weeks, idx){
+    if(isLocumId(state, personId) || !isPhysicianId(state, personId)) return 0;
+    let penalty = 0;
+    Object.entries(map || {}).forEach(([assignedDate, owner]) => {
+      if(owner !== personId) return;
+      if(isLocumId(state, owner)) return;
+      const gap = Math.abs(daysBetween(dateStr, assignedDate));
+      if(gap === 1) penalty += 10000;       // back-to-back call
+      else if(gap === 2) penalty += 6500;   // 48-hour / Monday-Wednesday style spacing
+    });
+
+    const prevWeekendOwner = idx > 0 ? weeks[idx-1].weekendOwner : '';
+    if(prevWeekendOwner === personId && isPhysicianId(state, prevWeekendOwner) && dayIndex <= 1) penalty += 9000; // Mon/Tue after physician weekend
+    if(week.weekendOwner === personId && isPhysicianId(state, week.weekendOwner) && dayIndex >= 3) penalty += 9000; // Thu/Fri before physician weekend
+    return penalty;
   }
 
-  function assignWeekdayNights(state, weeks, availability, options={}){
+  function violatesHardPhysicianCallSpacing(state, map, personId, dateStr, week, dayIndex, weeks, idx){
+    // Justin rule: for regular physicians only, do not place call within 48 hours of another call.
+    // Locum-selected dates are not constrained by this rule.
+    if(isLocumId(state, personId) || !isPhysicianId(state, personId)) return false;
+
+    for(const [assignedDate, owner] of Object.entries(map || {})){
+      if(owner !== personId) continue;
+      if(isLocumId(state, owner)) continue;
+      const gap = Math.abs(daysBetween(dateStr, assignedDate));
+      if(gap <= 2) return true;
+    }
+
+    const prevWeekendOwner = idx > 0 ? weeks[idx-1].weekendOwner : '';
+    if(prevWeekendOwner === personId && isPhysicianId(state, prevWeekendOwner) && dayIndex <= 1) return true;
+    if(week.weekendOwner === personId && isPhysicianId(state, week.weekendOwner) && dayIndex >= 3) return true;
+    return false;
+  }
+
+  function assignWeekdayNights(state, weeks, availability){
     const store = initFairnessStore(state);
     const out = [];
     const map = {};
     const perMonth = {};
     const perWeek = {};
-    seedLockedNightAssignments(state, weeks, store, out, map, perMonth, perWeek);
     seedLocumNightCalls(state, weeks, availability, store, out, map, perMonth, perWeek);
 
     weeks.forEach((week, idx) => {
@@ -769,25 +556,28 @@ function applyCarRotation(state, weeks, availability){
       for(let i=0;i<5;i++){
         const date = iso(addDays(mon,i));
         const month = monthKey(date);
-        const prevWeekendOwner = i===0 && idx>0 ? weeks[idx-1].weekendOwner : '';
         if(map[date]) continue;
-        const candidates = state.physicians.filter(p => {
+
+        const baseCandidates = state.physicians.filter(p => {
           if(!p.nightEligible) return false;
           if(!availability[p.id][week.weekStart].nightAvailable) return false;
           if(hasRequest(state,p.id,'no_call',date,date) || hasRequest(state,p.id,'no_night_call',date,date) || hasVacation(state,p.id,date,date)) return false;
           if((perMonth[`${p.id}:${month}`]||0) >= 4) return false;
           if((perWeek[`${p.id}:${week.weekStart}`]||0) >= 2) return false;
           if(week.weekendOwner === p.id && (perWeek[`${p.id}:${week.weekStart}`]||0) >= 1) return false;
-          if(i===4 && week.weekendOwner === p.id) return false;
-          if(i===0 && prevWeekendOwner === p.id) return false;
-          if(hasConsecutiveNight(map,p.id,date)) return false;
+          if(!isBFAllowedWeekdayNight(week, p.id)) return false;
           return true;
-        }).sort((a,b) => {
-          const as = currentScore(store, a.id, 'night') + (options.stable ? stableBonusNight(state, date, a.id) : 0);
-          const bs = currentScore(store, b.id, 'night') + (options.stable ? stableBonusNight(state, date, b.id) : 0);
-          if(as !== bs) return as - bs;
-          return a.id.localeCompare(b.id);
         });
+
+        const candidates = baseCandidates
+          .filter(p => !violatesHardPhysicianCallSpacing(state, map, p.id, date, week, i, weeks, idx))
+          .sort((a,b) => {
+            const as = currentScore(store, a.id, 'night') + callSpacingPenalty(state, map, a.id, date, week, i, weeks, idx);
+            const bs = currentScore(store, b.id, 'night') + callSpacingPenalty(state, map, b.id, date, week, i, weeks, idx);
+            if(as !== bs) return as - bs;
+            return a.id.localeCompare(b.id);
+          });
+
         const chosen = candidates[0];
         out.push({ date, owner: chosen ? chosen.id : '', weekend:false, weekStart:week.weekStart });
         if(chosen){
@@ -797,8 +587,8 @@ function applyCarRotation(state, weeks, availability){
           addAssignmentChargeSimple(store, state, chosen.id, 'night');
         }
       }
-      if(!map[week.weekendStart]) out.push({ date: week.weekendStart, owner: week.weekendOwner || '', weekend:true, weekStart:week.weekStart });
-      if(!map[week.weekendEnd]) out.push({ date: week.weekendEnd, owner: week.weekendOwner || '', weekend:true, weekStart:week.weekStart });
+      out.push({ date: week.weekendStart, owner: week.weekendOwner || '', weekend:true, weekStart:week.weekStart });
+      out.push({ date: week.weekendEnd, owner: week.weekendOwner || '', weekend:true, weekStart:week.weekStart });
       if(week.weekendOwner){ map[week.weekendStart] = week.weekendOwner; map[week.weekendEnd] = week.weekendOwner; }
     });
     return out;
@@ -850,6 +640,8 @@ function applyCarRotation(state, weeks, availability){
     nights.filter(n => !n.weekend).forEach(n => {
       if(!n.owner){ issues.push({ level:'warning', code:'night-unfilled', message:`Night call unfilled on ${n.date}`, date:n.date }); return; }
       if(map[n.owner]?.type !== 'locum' && !canDoService(map[n.owner], 'Night')) issues.push({ level:'error', code:'night-eligibility', message:`${n.owner} not eligible for night call`, date:n.date });
+      const nightWeek = weeks.find(w => w.weekStart === n.weekStart);
+      if(n.owner === 'BF' && !isBFAllowedWeekdayNight(nightWeek, n.owner)) issues.push({ level:'error', code:'bf-nephro-night-rule', message:'BF assigned weekday night call outside a BF Nephro week', date:n.date });
       const prev = iso(addDays(parseDate(n.date), -1));
       if(nightMap[prev] === n.owner) issues.push({ level:'error', code:'back-to-back-night-calls', message:`${n.owner} has back to back night calls`, date:n.date });
       const mk = `${n.owner}:${monthKey(n.date)}`;
@@ -864,29 +656,27 @@ function applyCarRotation(state, weeks, availability){
     return issues;
   }
 
-  function generateSchedule(state, startDate, endDate, options={}){
+  function generateSchedule(state, startDate, endDate){
     const weeks = getWeeks(startDate, endDate);
     const availability = buildAvailability(state, weeks);
-    applyLockedWeeks(state, weeks);
-    assignMajorServices(state, weeks, availability, options);
-    assignWeekendOwners(state, weeks, availability, options);
+    assignMajorServices(state, weeks, availability);
+    assignWeekendOwners(state, weeks, availability);
     applyPinnedAssignments(state, weeks);
-    const nights = assignWeekdayNights(state, weeks, availability, options);
+    const nights = assignWeekdayNights(state, weeks, availability);
     const fairnessSummary = summarizeFairness(state, weeks, nights);
     const validation = validateSchedule(state, weeks, nights);
     return { weeks, nightAssignments:nights, fairnessSummary, validation };
   }
 
-  function persistGeneratedDraft(startDate, endDate, options={}){
+  function persistGeneratedDraft(startDate, endDate){
     const state = window.AppState.loadState();
-    const result = generateSchedule(state, startDate, endDate, options);
+    const result = generateSchedule(state, startDate, endDate);
     state.settings.scheduleStart = startDate;
     state.settings.scheduleEnd = endDate;
     state.draftWeeks = result.weeks;
     state.draftNightManual = result.nightAssignments;
     state.generatedSummary = { fairnessSummary: result.fairnessSummary, validation: result.validation };
     state.metadata.lastGeneratedAt = new Date().toISOString();
-    state.metadata.lastGenerationMode = options.stable ? 'stable' : 'fresh';
     window.AppState.saveState(state);
     return result;
   }
@@ -932,6 +722,8 @@ function applyCarRotation(state, weeks, availability){
         return person.weekendEligible;
       }
       if(person.type === 'locum') return person.callDates?.includes(nightEntry.date);
+      const nightWeek = (state.draftWeeks || []).find(w => w.weekStart === nightEntry.weekStart);
+      if(!isBFAllowedWeekdayNight(nightWeek, person.id)) return false;
       return person.nightEligible && !hasRequest(state, person.id,'no_call',nightEntry.date,nightEntry.date) && !hasRequest(state, person.id,'no_night_call',nightEntry.date,nightEntry.date) && !hasVacation(state, person.id,nightEntry.date,nightEntry.date);
     });
   }
@@ -984,3 +776,89 @@ function applyCarRotation(state, weeks, availability){
     applyNightOverride
   };
 })();
+
+function tableToCSV(table){
+  const rows=[...table.querySelectorAll("tr")];
+  return rows.map(r=>[...r.children].map(c=>'"'+c.innerText.replace(/"/g,'""')+'"').join(",")).join("\n");
+}
+
+function downloadCSV(csv,name){
+  const blob=new Blob([csv],{type:"text/csv"});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement("a");
+  a.href=url;a.download=name;a.click();
+  URL.revokeObjectURL(url);
+}
+
+function exportMasterExcel(){
+  const table=document.querySelector(".fit-master table");
+  if(!table) return alert("No master schedule found");
+  downloadCSV(tableToCSV(table),"master_schedule.csv");
+}
+
+function exportNightExcel(){
+  const state = window.AppState && window.AppState.loadState ? window.AppState.loadState() : null;
+  const nights = (state && state.draftNightManual) ? state.draftNightManual : [];
+  if(!nights.length) return alert("No night call calendar found");
+  const people = Object.fromEntries([...(state?.physicians || []), ...(state?.locums || [])].map(p => [p.id, p.name || p.id]));
+  const rows = [["Date","Owner","Type"]].concat(
+    nights.map(n => [
+      n.date || "",
+      people[n.owner] || n.owner || "",
+      n.weekend ? "Weekend call" : "Weekday night call"
+    ])
+  );
+  const csv = rows.map(r => r.map(v => '"' + String(v).replace(/"/g,'""') + '"').join(",")).join("\n");
+  downloadCSV(csv, "night_call.csv");
+}
+
+function exportMasterPDF(){
+  const wrap = document.querySelector('.fit-master');
+  const table = wrap ? wrap.querySelector('table') : null;
+  if(!table){
+    alert("Master schedule not found");
+    return;
+  }
+
+  const html = table.outerHTML;
+  const win = window.open('', '_blank');
+  win.document.write(`
+    <html>
+      <head>
+        <title>Master Schedule</title>
+        <style>
+          @page { size: landscape; margin: 10mm; }
+          body { font-family: Arial, Helvetica, sans-serif; margin: 0; color: #111; }
+          .print-wrap { width: 100%; }
+          table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+          th, td { border: 1px solid #d6d6d6; padding: 6px 4px; font-size: 11px; text-align: center; vertical-align: top; }
+          th.service-col, td.week-row-label { width: 110px; text-align: left; }
+          .small { font-size: 10px; color: #666; }
+          .service-header { font-weight: 700; }
+          .chip, .day-owner {
+            display: inline-block;
+            padding: 2px 6px;
+            border-radius: 999px;
+            font-size: 10px;
+            line-height: 1.2;
+            white-space: nowrap;
+            border: 1px solid #d9d9d9;
+            background: #f7f7f7;
+            color: #111;
+          }
+          .service-cell.mine, .my-week-row td { background: #fafafa; }
+          .service-ICU, .service-GIM, .service-CAR1, .service-CAR2, .service-Resp, .service-Nephro,
+          .service-OP1, .service-OP2, .service-OP3, .service-Echo, .service-Weekend { background: transparent; }
+          .lock-toggle, .btn, button { display: none !important; }
+        </style>
+</head>
+      <body>
+        <div class="print-wrap">${html}</div>
+      </body>
+    </html>
+  `);
+  win.document.close();
+  win.focus();
+  win.print();
+}
+

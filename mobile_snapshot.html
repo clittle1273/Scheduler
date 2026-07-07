@@ -824,7 +824,11 @@ function assignMajorServices(state, weeks, availability){
         const assigned = peopleAssignedThisWeek(week);
         const candidates = state.physicians.filter(p => {
           if(!canDoService(p, service)) return false;
-          if(assigned[p.id]) return false;
+          // BB ICU rule: BB may only be assigned ICU on weeks where BB is also assigned Resp.
+          // This is the only allowed same-week double assignment for BB.
+          const bbRespIcuWeek = service === 'ICU' && p.id === 'BB' && week.services.Resp === 'BB';
+          if(service === 'ICU' && p.id === 'BB' && !bbRespIcuWeek) return false;
+          if(assigned[p.id] && !bbRespIcuWeek) return false;
           if(!availability[p.id][week.weekStart].serviceAvailable) return false;
           return true;
         }).sort((a,b) => {
@@ -931,12 +935,19 @@ function assignMajorServices(state, weeks, availability){
 
   function weekendPreferenceScore(weeks, idx, personId){
     let score = 0;
-    const prev = weeks[idx-1];
+    const current = weeks[idx];
     const next = weeks[idx+1];
-    const prevSvc = prev ? getPrimaryServiceForPerson(prev, personId) : '';
+
+    // Strong preference: the GIM or ICU physician for the current service week
+    // should take the weekend immediately following that week if available.
+    const currentSvc = current ? getPrimaryServiceForPerson(current, personId) : '';
+    if(['ICU','GIM'].includes(currentSvc)) score -= 1000;
+
+    // Fallback preference: if the following-week service person cannot take their own
+    // following weekend, prefer assigning them the weekend before that service week.
     const nextSvc = next ? getPrimaryServiceForPerson(next, personId) : '';
-    if(['ICU','GIM'].includes(prevSvc)) score -= 1.1;
-    if(['ICU','GIM'].includes(nextSvc)) score -= 1.0;
+    if(['ICU','GIM'].includes(nextSvc)) score -= 250;
+
     return score;
   }
 
