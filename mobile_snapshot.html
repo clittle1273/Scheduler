@@ -814,6 +814,16 @@ function loadState(){
 
   
 
+function bbIcuAllowedThisWeek(state, weeks, week, store, icuTargets){
+    // BB ICU rule: Resp gets scheduled first. BB can be ICU only on weeks
+    // where BB is already assigned Resp, and only until his 0.8 FTE ICU target is met.
+    if(!week || !week.services || week.services.Resp !== 'BB') return false;
+    const target = Math.max(0, icuTargets?.BB || 0);
+    const cap = Math.max(0, Math.round(target));
+    const done = store?.BB?.serviceCounts?.ICU || 0;
+    return done < cap;
+  }
+
 function assignMajorServices(state, weeks, availability){
     const store = initFairnessStore(state);
     const requiredTargets = computeServiceTargets(state, weeks, REQUIRED_SERVICES);
@@ -824,20 +834,9 @@ function assignMajorServices(state, weeks, availability){
         const assigned = peopleAssignedThisWeek(week);
         const candidates = state.physicians.filter(p => {
           if(!canDoService(p, service)) return false;
-          // BB ICU rule: BB remains ICU-eligible at 0.8 FTE, but only on weeks
-          // where Resp was already assigned to BB first. Resp never gets assigned just
-          // to create an ICU slot. Once BB reaches his calculated ICU cap, do not keep
-          // assigning ICU on every BB Resp week.
-          const bbRespIcuWeek = service === 'ICU' && p.id === 'BB' && week.services.Resp === 'BB';
-          if(service === 'ICU' && p.id === 'BB'){
-            const bbIcuTarget = icuTargets?.BB ?? requiredTargets?.ICU?.BB ?? 0;
-            const bbIcuCap = Math.max(0, Math.ceil(bbIcuTarget - 0.01));
-            const bbIcuDone = store.BB?.serviceCounts?.ICU || 0;
-            if(!bbRespIcuWeek) return false;
-            if(bbIcuDone >= bbIcuCap) return false;
-          }
-          if(assigned[p.id] && !bbRespIcuWeek) return false;
+          if(assigned[p.id]) return false;
           if(!availability[p.id][week.weekStart].serviceAvailable) return false;
+          if(service === 'ICU' && p.id === 'BB' && !bbIcuAllowedThisWeek(state, weeks, week, store, icuTargets)) return false;
           return true;
         }).sort((a,b) => {
           const aPref = service === 'Resp' ? (availability[a.id][week.weekStart].respRequested ? -1 : 0)
@@ -846,20 +845,8 @@ function assignMajorServices(state, weeks, availability){
             : service === 'Nephro' ? (availability[b.id][week.weekStart].nephroRequested ? -1 : 0) : 0;
           if(aPref !== bPref) return aPref - bPref;
 
-          // BB Resp-first / ICU quota rule:
-          // 1) Resp is scheduled first and BB Resp requests still win through aPref/bPref.
-          // 2) Do not assign BB to Resp merely to satisfy ICU.
-          // 3) If BB already has Resp and is still below his ICU cap, strongly prefer
-          //    pairing ICU with that Resp week, but stop once the cap is reached.
-          const bbIcuTarget = icuTargets?.BB ?? requiredTargets?.ICU?.BB ?? 0;
-          const bbIcuCap = Math.max(0, Math.ceil(bbIcuTarget - 0.01));
-          const bbIcuDone = store.BB?.serviceCounts?.ICU || 0;
-          const bbCanTakeIcu = bbIcuDone < bbIcuCap;
-          const aBbRespIcuBonus = service === 'ICU' && a.id === 'BB' && week.services.Resp === 'BB' && bbCanTakeIcu ? -50 : 0;
-          const bBbRespIcuBonus = service === 'ICU' && b.id === 'BB' && week.services.Resp === 'BB' && bbCanTakeIcu ? -50 : 0;
-
-          const aDef = serviceDeficitScore(store, a.id, service, requiredTargets) + serviceRecentPenalty(weeks, week.weekStart, a.id, service) + aBbRespIcuBonus;
-          const bDef = serviceDeficitScore(store, b.id, service, requiredTargets) + serviceRecentPenalty(weeks, week.weekStart, b.id, service) + bBbRespIcuBonus;
+          const aDef = serviceDeficitScore(store, a.id, service, requiredTargets) + serviceRecentPenalty(weeks, week.weekStart, a.id, service);
+          const bDef = serviceDeficitScore(store, b.id, service, requiredTargets) + serviceRecentPenalty(weeks, week.weekStart, b.id, service);
           if(aDef !== bDef) return aDef - bDef;
 
           const aOverall = overallWeeklyBurden(store, a.id);
@@ -871,7 +858,6 @@ function assignMajorServices(state, weeks, availability){
         if(candidates[0]){
           week.services[service] = candidates[0].id;
           addAssignmentChargeSimple(store, state, candidates[0].id, 'service', service);
-          // Resp is intentionally scheduled before ICU. Do not assign Resp from inside ICU logic.
         }
       });
     });
@@ -884,6 +870,7 @@ function assignMajorServices(state, weeks, availability){
           if(!canDoService(p, service)) return false;
           if(assigned[p.id]) return false;
           if(!availability[p.id][week.weekStart].serviceAvailable) return false;
+          if(service === 'ICU' && p.id === 'BB' && !bbIcuAllowedThisWeek(state, weeks, week, store, icuTargets)) return false;
           return true;
         }).sort((a,b) => {
           const aOverall = overallWeeklyBurden(store, a.id) + serviceRecentPenalty(weeks, week.weekStart, a.id, service) + opPriorityPenalty(service);
@@ -894,7 +881,6 @@ function assignMajorServices(state, weeks, availability){
         if(candidates[0]){
           week.services[service] = candidates[0].id;
           addAssignmentChargeSimple(store, state, candidates[0].id, 'service', service);
-          // Resp is intentionally scheduled before ICU. Do not assign Resp from inside ICU logic.
         } else {
           week.services[service] = '';
         }
@@ -957,19 +943,14 @@ function assignMajorServices(state, weeks, availability){
 
   function weekendPreferenceScore(weeks, idx, personId){
     let score = 0;
-    const current = weeks[idx];
+    const week = weeks[idx];
     const next = weeks[idx+1];
-
-    // Strong preference: the GIM or ICU physician for the current service week
-    // should take the weekend immediately following that week if available.
-    const currentSvc = current ? getPrimaryServiceForPerson(current, personId) : '';
-    if(['ICU','GIM'].includes(currentSvc)) score -= 1000;
-
-    // Fallback preference: if the following-week service person cannot take their own
-    // following weekend, prefer assigning them the weekend before that service week.
+    const thisSvc = week ? getPrimaryServiceForPerson(week, personId) : '';
     const nextSvc = next ? getPrimaryServiceForPerson(next, personId) : '';
-    if(['ICU','GIM'].includes(nextSvc)) score -= 250;
-
+    // Strong preference: the ICU/GIM physician of the week takes the following weekend.
+    // Fallback: if that is not possible, prefer the next week's ICU/GIM physician on the weekend before.
+    if(['ICU','GIM'].includes(thisSvc)) score -= 50;
+    if(['ICU','GIM'].includes(nextSvc)) score -= 10;
     return score;
   }
 
