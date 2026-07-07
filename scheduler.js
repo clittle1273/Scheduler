@@ -1,6 +1,6 @@
 (function(){
   const MAJOR_SERVICES = ['ICU','GIM','CAR1','CAR2','Resp','Nephro','OP1','OP2','OP3'];
-  const REQUIRED_SERVICES = ['ICU','Resp','Nephro','GIM','CAR1','CAR2'];
+  const REQUIRED_SERVICES = ['Resp','Nephro','ICU','GIM','CAR1','CAR2'];
   const OPTIONAL_OP_SERVICES = ['OP1','OP2','OP3'];
   const ROW_SERVICES = ['ICU','GIM','CAR1','CAR2','Resp','Nephro','OP1','OP2','OP3','Echo','Weekend'];
   const OP_SERVICES = ['OP1','OP2','OP3'];
@@ -348,10 +348,12 @@
         const assigned = peopleAssignedThisWeek(week);
         const candidates = state.physicians.filter(p => {
           if(!canDoService(p, service)) return false;
-          // BB ICU rule: BB may only be assigned ICU on weeks where BB is also assigned Resp.
-          // This is the only allowed same-week double assignment for BB.
+          // BB ICU rule: BB remains ICU-eligible at 0.8 FTE, but only on weeks
+          // where Resp is either already BB or still open and can be paired with BB.
+          // This avoids excluding BB from ICU just because ICU is assigned before Resp.
           const bbRespIcuWeek = service === 'ICU' && p.id === 'BB' && week.services.Resp === 'BB';
-          if(service === 'ICU' && p.id === 'BB' && !bbRespIcuWeek) return false;
+          const bbRespIcuPairable = service === 'ICU' && p.id === 'BB' && !week.services.Resp && canDoService(p, 'Resp') && availability[p.id][week.weekStart].serviceAvailable;
+          if(service === 'ICU' && p.id === 'BB' && !(bbRespIcuWeek || bbRespIcuPairable)) return false;
           if(assigned[p.id] && !bbRespIcuWeek) return false;
           if(!availability[p.id][week.weekStart].serviceAvailable) return false;
           return true;
@@ -362,8 +364,14 @@
             : service === 'Nephro' ? (availability[b.id][week.weekStart].nephroRequested ? -1 : 0) : 0;
           if(aPref !== bPref) return aPref - bPref;
 
-          const aDef = serviceDeficitScore(store, a.id, service, requiredTargets) + serviceRecentPenalty(weeks, week.weekStart, a.id, service);
-          const bDef = serviceDeficitScore(store, b.id, service, requiredTargets) + serviceRecentPenalty(weeks, week.weekStart, b.id, service);
+          // BB ICU pairing rule: Resp is assigned before ICU. If BB has Resp this week,
+          // strongly prefer BB for ICU as well so his 0.8 FTE ICU share is preserved.
+          // This must not override Resp requests, because Resp has already been assigned.
+          const aBbRespIcuBonus = service === 'ICU' && a.id === 'BB' && week.services.Resp === 'BB' ? -4 : 0;
+          const bBbRespIcuBonus = service === 'ICU' && b.id === 'BB' && week.services.Resp === 'BB' ? -4 : 0;
+
+          const aDef = serviceDeficitScore(store, a.id, service, requiredTargets) + serviceRecentPenalty(weeks, week.weekStart, a.id, service) + aBbRespIcuBonus;
+          const bDef = serviceDeficitScore(store, b.id, service, requiredTargets) + serviceRecentPenalty(weeks, week.weekStart, b.id, service) + bBbRespIcuBonus;
           if(aDef !== bDef) return aDef - bDef;
 
           const aOverall = overallWeeklyBurden(store, a.id);
@@ -375,6 +383,7 @@
         if(candidates[0]){
           week.services[service] = candidates[0].id;
           addAssignmentChargeSimple(store, state, candidates[0].id, 'service', service);
+          // Resp is intentionally scheduled before ICU. Do not assign Resp from inside ICU logic.
         }
       });
     });
@@ -397,6 +406,7 @@
         if(candidates[0]){
           week.services[service] = candidates[0].id;
           addAssignmentChargeSimple(store, state, candidates[0].id, 'service', service);
+          // Resp is intentionally scheduled before ICU. Do not assign Resp from inside ICU logic.
         } else {
           week.services[service] = '';
         }
