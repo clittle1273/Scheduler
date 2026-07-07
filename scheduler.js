@@ -545,6 +545,42 @@ function applyCarRotation(state, weeks, availability){
   }
 
 
+  function enforceHardNoGimNoIcuBlocks(state, weeks, availability){
+    // Final safety guard: No GIM Week and No ICU Week are absolute blocks for those services only.
+    // This runs after service assignment so fallback, rotation, stable regeneration, or rescue passes
+    // cannot accidentally place someone into a service they explicitly blocked.
+    ['ICU','GIM'].forEach(service => {
+      weeks.forEach((week, idx) => {
+        const owner = (week.services || {})[service] || '';
+        if(!owner) return;
+        if(!isBlockedForServiceRequest(availability, owner, week.weekStart, service)) return;
+
+        week.services[service] = '';
+        const assigned = peopleAssignedThisWeek(week);
+        const prevOwner = idx > 0 ? weeks[idx-1].services?.[service] : '';
+        const prev2Owner = idx > 1 ? weeks[idx-2].services?.[service] : '';
+
+        const replacement = state.physicians
+          .filter(p => {
+            if(!canDoService(p, service)) return false;
+            if(assigned[p.id]) return false;
+            if(!availability[p.id]?.[week.weekStart]?.serviceAvailable) return false;
+            if(isBlockedForServiceRequest(availability, p.id, week.weekStart, service)) return false;
+            return true;
+          })
+          .sort((a,b) => {
+            const aRecent = (a.id === prevOwner || a.id === prev2Owner) ? 0.5 : 0;
+            const bRecent = (b.id === prevOwner || b.id === prev2Owner) ? 0.5 : 0;
+            if(aRecent !== bRecent) return aRecent - bRecent;
+            return a.id.localeCompare(b.id);
+          })[0];
+
+        if(replacement) week.services[service] = replacement.id;
+      });
+    });
+  }
+
+
   function assignMajorServices(state, weeks, availability, options={}){
     // deterministic CAR rotation first
     if(typeof applyCarRotation === 'function') applyCarRotation(state, weeks, availability);
@@ -725,6 +761,8 @@ function applyCarRotation(state, weeks, availability){
         }
       });
     });
+
+    enforceHardNoGimNoIcuBlocks(state, weeks, availability);
 
     weeks.forEach((week, idx) => {
       const echoCandidates = state.physicians.filter(p => p.echoEligible && availability[p.id][week.weekStart].serviceAvailable && ECHO_ALLOWED.includes(getPrimaryServiceForPerson(week,p.id)))

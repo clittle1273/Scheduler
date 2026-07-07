@@ -1300,6 +1300,8 @@ function exportMasterPDF(){
       return false;
     }
 
+    enforceHardNoGimNoIcuBlocks(state, weeks, availability);
+
     weeks.forEach((week, idx) => {
       const preferred = echoOrder[idx % echoOrder.length];
       const lowestEchoId = echoOrder.slice().sort((a,b) => {
