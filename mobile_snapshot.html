@@ -777,6 +777,8 @@ function loadState(){
       if(!availability[p.id][week.weekStart].serviceAvailable) return false;
       if(service === 'GIM' && availability[p.id][week.weekStart].noGimWeek) return false;
       if(service === 'ICU' && availability[p.id][week.weekStart].noIcuWeek) return false;
+          // Simple BB rule: BB can only do ICU on weeks where BB is already assigned Resp.
+          if(service === 'ICU' && p.id === 'BB' && week.services?.Resp !== 'BB') return false;
       return true;
     }).sort((a,b) => {
       const aPref = service === 'Resp' ? (availability[a.id][week.weekStart].respRequested ? -1 : 0)
@@ -814,29 +816,18 @@ function loadState(){
 
   
 
-function bbIcuAllowedThisWeek(state, weeks, week, store, icuTargets){
-    // BB ICU rule: Resp gets scheduled first. BB can be ICU only on weeks
-    // where BB is already assigned Resp, and only until his 0.8 FTE ICU target is met.
-    if(!week || !week.services || week.services.Resp !== 'BB') return false;
-    const target = Math.max(0, icuTargets?.BB || 0);
-    const cap = Math.max(0, Math.round(target));
-    const done = store?.BB?.serviceCounts?.ICU || 0;
-    return done < cap;
-  }
-
 function assignMajorServices(state, weeks, availability){
     const store = initFairnessStore(state);
     const requiredTargets = computeServiceTargets(state, weeks, REQUIRED_SERVICES);
 
     // Phase 1: distribute required services globally across the whole block.
     REQUIRED_SERVICES.forEach(service => {
-      weeks.forEach(week => {
+      weeks.forEach((week, idx) => {
         const assigned = peopleAssignedThisWeek(week);
         const candidates = state.physicians.filter(p => {
           if(!canDoService(p, service)) return false;
           if(assigned[p.id]) return false;
           if(!availability[p.id][week.weekStart].serviceAvailable) return false;
-          if(service === 'ICU' && p.id === 'BB' && !bbIcuAllowedThisWeek(state, weeks, week, store, icuTargets)) return false;
           return true;
         }).sort((a,b) => {
           const aPref = service === 'Resp' ? (availability[a.id][week.weekStart].respRequested ? -1 : 0)
@@ -864,13 +855,12 @@ function assignMajorServices(state, weeks, availability){
 
     // Phase 2: fill optional OP services in priority order only if feasible.
     OPTIONAL_OP_SERVICES.forEach(service => {
-      weeks.forEach(week => {
+      weeks.forEach((week, idx) => {
         const assigned = peopleAssignedThisWeek(week);
         const candidates = state.physicians.filter(p => {
           if(!canDoService(p, service)) return false;
           if(assigned[p.id]) return false;
           if(!availability[p.id][week.weekStart].serviceAvailable) return false;
-          if(service === 'ICU' && p.id === 'BB' && !bbIcuAllowedThisWeek(state, weeks, week, store, icuTargets)) return false;
           return true;
         }).sort((a,b) => {
           const aOverall = overallWeeklyBurden(store, a.id) + serviceRecentPenalty(weeks, week.weekStart, a.id, service) + opPriorityPenalty(service);
@@ -943,14 +933,12 @@ function assignMajorServices(state, weeks, availability){
 
   function weekendPreferenceScore(weeks, idx, personId){
     let score = 0;
-    const week = weeks[idx];
+    const prev = weeks[idx-1];
     const next = weeks[idx+1];
-    const thisSvc = week ? getPrimaryServiceForPerson(week, personId) : '';
+    const prevSvc = prev ? getPrimaryServiceForPerson(prev, personId) : '';
     const nextSvc = next ? getPrimaryServiceForPerson(next, personId) : '';
-    // Strong preference: the ICU/GIM physician of the week takes the following weekend.
-    // Fallback: if that is not possible, prefer the next week's ICU/GIM physician on the weekend before.
-    if(['ICU','GIM'].includes(thisSvc)) score -= 50;
-    if(['ICU','GIM'].includes(nextSvc)) score -= 10;
+    if(['ICU','GIM'].includes(prevSvc)) score -= 1.1;
+    if(['ICU','GIM'].includes(nextSvc)) score -= 1.0;
     return score;
   }
 

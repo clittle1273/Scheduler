@@ -155,7 +155,6 @@ function applyCarRotation(state, weeks, availability){
     state.physicians.forEach(p => {
       const fte = (p.fte || 1.0);
       const hist = carry[p.id] || emptyCarryForwardRowScheduler(p.id, p.name);
-      const fte = (p.fte || 1.0);
       const serviceCounts = {
         ICU: hist.serviceCounts?.ICU || 0,
         GIM: hist.serviceCounts?.GIM || 0,
@@ -456,6 +455,8 @@ function applyCarRotation(state, weeks, availability){
       if(!availability[p.id][week.weekStart].serviceAvailable) return false;
       if(service === 'GIM' && availability[p.id][week.weekStart].noGimWeek) return false;
       if(service === 'ICU' && availability[p.id][week.weekStart].noIcuWeek) return false;
+          // Simple BB rule: BB can only do ICU on weeks where BB is already assigned Resp.
+          if(service === 'ICU' && p.id === 'BB' && week.services?.Resp !== 'BB') return false;
       return true;
     }).sort((a,b) => {
       const aPref = service === 'Resp' ? (availability[a.id][week.weekStart].respRequested ? -1 : 0)
@@ -536,19 +537,9 @@ function applyCarRotation(state, weeks, availability){
   }
 
 
-  function bbIcuAllowedThisWeek(state, weeks, week, store, icuTargets){
-    // BB ICU rule: Resp gets scheduled first. BB can be ICU only on weeks
-    // where BB is already assigned Resp, and only until his 0.8 FTE ICU target is met.
-    if(!week || !week.services || week.services.Resp !== 'BB') return false;
-    const target = Math.max(0, icuTargets?.BB || 0);
-    const cap = Math.max(0, Math.round(target));
-    const done = store?.BB?.serviceCounts?.ICU || 0;
-    return done < cap;
-  }
-
-  function assignMajorServices(state, weeks, availability, options={
-  // deterministic CAR rotation first
-  applyCarRotation(state, weeks, availability);}){
+  function assignMajorServices(state, weeks, availability, options={}){
+    // deterministic CAR rotation first
+    if(typeof applyCarRotation === 'function') applyCarRotation(state, weeks, availability);
     const store = initFairnessStore(state);
     seedLockedMajorAssignments(state, weeks, store);
     seedLocumWeeklyCoverage(state, weeks, availability, store);
@@ -556,7 +547,7 @@ function applyCarRotation(state, weeks, availability){
     const icuTargets = computeIcuTargetsForRange(state, weeks, store);
 
     REQUIRED_SERVICES.forEach(service => {
-      weeks.forEach(week => {
+      weeks.forEach((week, idx) => {
         if(week.services[service]) return;
         const assigned = peopleAssignedThisWeek(week);
         const prevOwner = idx > 0 ? weeks[idx-1].services?.[service] : '';
@@ -566,12 +557,6 @@ function applyCarRotation(state, weeks, availability){
           if(!canDoService(p, service)) return false;
           if(assigned[p.id]) return false;
           if(!availability[p.id][week.weekStart].serviceAvailable) return false;
-          if(service === 'Resp' && p.id === 'BB'){
-            const bbTarget = Math.max(0.001, icuTargets['BB'] || 0.001);
-            const bbDone = store['BB']?.serviceCounts?.ICU || 0;
-            const bbCompletion = bbDone / bbTarget;
-            if(bbCompletion < 0.999) return false;
-          }
           if((service === 'CAR1' || service === 'CAR2') && (p.id === prevOwner || p.id === prev2Owner)) return false;
           return true;
         });
@@ -600,9 +585,6 @@ function applyCarRotation(state, weeks, availability){
             const completionA = doneA / targetA;
             const completionB = doneB / targetB;
             if(completionA !== completionB) return completionA - completionB;
-            const prefA = a.id === 'BB' ? -0.05 : 0;
-            const prefB = b.id === 'BB' ? -0.05 : 0;
-            if(prefA !== prefB) return prefA - prefB;
           }
 
           const aDef = serviceDeficitScore(store, a.id, service, requiredTargets) + serviceRecentPenalty(weeks, week.weekStart, a.id, service) + (options.stable ? stableBonusWeek(state, week.weekStart, service, a.id) : 0);
@@ -623,7 +605,7 @@ function applyCarRotation(state, weeks, availability){
     });
 
     OPTIONAL_OP_SERVICES.forEach(service => {
-      weeks.forEach(week => {
+      weeks.forEach((week, idx) => {
         if(week.services[service]) return;
         const assigned = peopleAssignedThisWeek(week);
         const prevOwner = idx > 0 ? weeks[idx-1].services?.[service] : '';
@@ -686,14 +668,12 @@ function applyCarRotation(state, weeks, availability){
 
   function weekendPreferenceScore(weeks, idx, personId){
     let score = 0;
-    const week = weeks[idx];
+    const prev = weeks[idx-1];
     const next = weeks[idx+1];
-    const thisSvc = week ? getPrimaryServiceForPerson(week, personId) : '';
+    const prevSvc = prev ? getPrimaryServiceForPerson(prev, personId) : '';
     const nextSvc = next ? getPrimaryServiceForPerson(next, personId) : '';
-    // Strong preference: the ICU/GIM physician of the week takes the following weekend.
-    // Fallback: if that is not possible, prefer the next week's ICU/GIM physician on the weekend before.
-    if(['ICU','GIM'].includes(thisSvc)) score -= 50;
-    if(['ICU','GIM'].includes(nextSvc)) score -= 10;
+    if(['ICU','GIM'].includes(prevSvc)) score -= 1.1;
+    if(['ICU','GIM'].includes(nextSvc)) score -= 1.0;
     return score;
   }
 
