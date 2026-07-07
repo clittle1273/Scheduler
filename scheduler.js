@@ -751,12 +751,14 @@ function applyCarRotation(state, weeks, availability){
 
   function weekendPreferenceScore(weeks, idx, personId){
     let score = 0;
-    const prev = weeks[idx-1];
+    const current = weeks[idx];
     const next = weeks[idx+1];
-    const prevSvc = prev ? getPrimaryServiceForPerson(prev, personId) : '';
+    const currentSvc = current ? getPrimaryServiceForPerson(current, personId) : '';
     const nextSvc = next ? getPrimaryServiceForPerson(next, personId) : '';
-    if(['ICU','GIM'].includes(prevSvc)) score -= 1.1;
-    if(['ICU','GIM'].includes(nextSvc)) score -= 1.0;
+    // Strong preference: weekend after that same week's ICU/GIM.
+    if(['ICU','GIM'].includes(currentSvc)) score -= 100;
+    // Fallback preference: weekend before next week's ICU/GIM.
+    if(['ICU','GIM'].includes(nextSvc)) score -= 80;
     return score;
   }
 
@@ -811,6 +813,10 @@ function applyCarRotation(state, weeks, availability){
         const aMonth = monthCounts[a.id] || 0;
         const bMonth = monthCounts[b.id] || 0;
         if(aMonth !== bMonth) return aMonth - bMonth;
+
+        const aPref = weekendPreferenceScore(weeks, idx, a.id);
+        const bPref = weekendPreferenceScore(weeks, idx, b.id);
+        if(aPref !== bPref) return aPref - bPref;
 
         return a.id.localeCompare(b.id);
       });
